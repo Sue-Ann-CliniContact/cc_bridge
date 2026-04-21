@@ -18,6 +18,12 @@ NPI_API_URL = 'https://npiregistry.cms.hhs.gov/api/'
 API_VERSION = '2.1'
 
 
+class NPITaxonomyNotFound(ValueError):
+    """CMS reports the taxonomy_description doesn't match any known taxonomy code.
+    Common cause: specialty tag is free-text (e.g. 'clinical research') rather than
+    an actual CMS taxonomy description. Service layer catches this and continues."""
+
+
 def search(
     *,
     taxonomy: str | None = None,
@@ -79,10 +85,43 @@ def search(
     if api_errors:
         messages = '; '.join(e.get('description', str(e)) for e in api_errors)
         log.warning('NPI 200-with-Errors: %s', messages)
+        if 'No taxonomy codes found' in messages:
+            raise NPITaxonomyNotFound(messages)
         raise RuntimeError(f'NPI API: {messages}')
     results = data.get('results') or []
     log.info('NPI returned %d results (result_count=%s)', len(results), data.get('result_count'))
     return [_normalize(item) for item in results]
+
+
+def search_multi(
+    taxonomies: list[str],
+    *,
+    state: str | None = None,
+    postal_code: str | None = None,
+    limit: int = 200,
+) -> tuple[list[dict], list[str]]:
+    """Iterate through each taxonomy term, aggregate matching candidates (deduped by NPI),
+    and report which terms CMS didn't recognize. Lets one bad specialty_tag not kill the whole run.
+    """
+    seen_npis: set[str] = set()
+    aggregated: list[dict] = []
+    unrecognized: list[str] = []
+
+    for taxo in taxonomies:
+        if not taxo or not taxo.strip():
+            continue
+        try:
+            batch = search(taxonomy=taxo.strip(), state=state, postal_code=postal_code, limit=limit)
+        except NPITaxonomyNotFound:
+            unrecognized.append(taxo.strip())
+            continue
+        for row in batch:
+            npi_val = row.get('npi') or ''
+            if npi_val in seen_npis:
+                continue
+            seen_npis.add(npi_val)
+            aggregated.append(row)
+    return aggregated, unrecognized
 
 
 def _normalize(item: dict) -> dict:

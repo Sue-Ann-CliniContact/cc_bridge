@@ -92,11 +92,19 @@ def suggest_support_groups(*, specialty_tags: list[str], geography: dict, limit:
 PROFILE_SYSTEM_PROMPT = (
     "You propose a partner-outreach targeting profile for a clinical trial. "
     "Given the project's study materials, pick a partner type, therapeutic "
-    "specialties (free-text tags that map to NPI taxonomy descriptions), ICD-10 "
-    "codes if clearly inferable, a geography scope, and a realistic target "
-    "population size. Prefer broader targeting unless the materials strongly "
-    "imply a narrow niche. Never invent clinical details not supported by the "
-    "source material."
+    "specialties, ICD-10 codes if clearly inferable, a geography scope, and a "
+    "realistic target population size.\n\n"
+    "CRITICAL — specialty_tags must be real CMS NPI Registry taxonomy descriptions, "
+    "not free-text topics. The NPI API will reject generic terms like 'clinical "
+    "research' or 'hematologic malignancies'. Use actual CMS specialty names. "
+    "Examples of valid values: 'Medical Oncology', 'Radiation Oncology', "
+    "'Hematology & Oncology', 'Internal Medicine', 'Family Medicine', 'Pediatrics', "
+    "'Cardiovascular Disease', 'Cardiology', 'Neurology', 'Dermatology', "
+    "'Endocrinology, Diabetes & Metabolism', 'Gastroenterology', 'Nephrology', "
+    "'Pulmonary Disease', 'Rheumatology', 'Psychiatry'. Include 1-3 tags that best "
+    "match the trial's therapeutic area.\n\n"
+    "Prefer broader targeting unless the materials strongly imply a narrow niche. "
+    "Never invent clinical details not supported by the source material."
 )
 
 PROFILE_TOOL_SCHEMA = {

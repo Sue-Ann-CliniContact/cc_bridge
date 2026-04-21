@@ -90,6 +90,7 @@ def _persist_candidate(candidate: dict, default_source: str, default_enrichment:
         organization=candidate.get('organization', ''),
         role=candidate.get('role', ''),
         specialty=candidate.get('specialty', ''),
+        contact_url=(candidate.get('contact_url') or '').strip(),
         geography=candidate.get('geography', {}) or {},
         source=default_source,
         enrichment_status=default_enrichment,
@@ -139,14 +140,18 @@ def source_from_npi(project: Project, *, limit: int = 100) -> SourcingResult:
         result.errors.append('NPI Registry does not list support groups — use "Suggest with AI" instead.')
         return result
 
-    taxonomy = profile.specialty_tags[0] if profile.specialty_tags else None
+    taxonomies = [t for t in (profile.specialty_tags or []) if t and t.strip()]
+    if not taxonomies:
+        result.errors.append('Add at least one specialty tag to the partner profile.')
+        return result
+
     geography = profile.geography or {}
     state = (geography.get('states') or [None])[0] if geography.get('type') == 'state' else None
     postal_code = geography.get('zip') if geography.get('type') == 'zip_radius' else None
 
     try:
-        raw_candidates = npi.search(
-            taxonomy=taxonomy,
+        raw_candidates, unrecognized = npi.search_multi(
+            taxonomies=taxonomies,
             state=state,
             postal_code=postal_code,
             limit=limit,
@@ -154,6 +159,13 @@ def source_from_npi(project: Project, *, limit: int = 100) -> SourcingResult:
     except Exception as exc:  # noqa: BLE001 — surface network/HTTP errors to the UI
         result.errors.append(f'NPI API error: {exc}')
         return result
+
+    if unrecognized:
+        result.errors.append(
+            f"Not recognized by NPI: {', '.join(unrecognized)}. "
+            f"Use real CMS taxonomy descriptions like 'Medical Oncology', 'Cardiology', "
+            f"'Family Medicine', 'Pediatrics', etc. — not generic terms like 'clinical research'."
+        )
 
     result.candidates_found = len(raw_candidates)
     # NPI rarely returns email; mark new leads as needing enrichment
@@ -186,12 +198,14 @@ def source_from_ai(project: Project, *, limit: int = 30, user=None) -> SourcingR
 
     result.candidates_found = len(suggestions)
     for s in suggestions:
-        # AI suggestions are org-level; we persist without email (human must find it)
+        # AI suggestions are org-level; humans go to the contact_url to find the right email
+        contact_url = s.get('contact_page_url') or s.get('content_url') or ''
         lead, created, conflict = _persist_candidate(
             {
                 'organization': s.get('organization', ''),
                 'role': 'Organization',
                 'specialty': ', '.join(profile.specialty_tags or [])[:255],
+                'contact_url': contact_url,
                 'geography': {'notes': s.get('description', '')},
             },
             default_source=Lead.SOURCE_AI_SUGGESTED,

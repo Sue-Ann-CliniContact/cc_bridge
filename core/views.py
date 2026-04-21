@@ -399,7 +399,7 @@ def lead_import_csv(request, project_id):
 
 
 def _flash_sourcing_result(request, result):
-    if result.errors:
+    if result.errors and result.candidates_found == 0:
         messages.warning(request, f"{result.source}: {' · '.join(result.errors)}")
         return
     if result.candidates_found == 0:
@@ -415,3 +415,6 @@ def _flash_sourcing_result(request, result):
         f"{result.source}: {len(result.created)} new · {len(result.reused)} reused "
         f"· {result.skipped_opted_out} opt-out skipped{conflict_note} · {result.candidates_found} considered",
     )
+    # Show non-fatal warnings alongside success (e.g. "2 specialty tags unrecognized but 98 leads found")
+    if result.errors:
+        messages.warning(request, f"{result.source}: {' · '.join(result.errors)}")

@@ -117,8 +117,8 @@ class LeadEditForm(forms.ModelForm):
         model = Lead
         fields = [
             'first_name', 'last_name', 'email', 'phone', 'npi',
-            'organization', 'role', 'specialty', 'enrichment_status',
-            'global_opt_out', 'do_not_contact_reason',
+            'organization', 'role', 'specialty', 'contact_url',
+            'enrichment_status', 'global_opt_out', 'do_not_contact_reason',
         ]
         widgets = {
             'first_name': forms.TextInput(attrs={'class': 'cc-input'}),
@@ -129,6 +129,7 @@ class LeadEditForm(forms.ModelForm):
             'organization': forms.TextInput(attrs={'class': 'cc-input'}),
             'role': forms.TextInput(attrs={'class': 'cc-input'}),
             'specialty': forms.TextInput(attrs={'class': 'cc-input'}),
+            'contact_url': forms.URLInput(attrs={'class': 'cc-input', 'placeholder': 'https://org.example.com/contact'}),
             'enrichment_status': forms.Select(attrs={'class': 'cc-input'}),
             'do_not_contact_reason': forms.TextInput(attrs={'class': 'cc-input'}),
         }

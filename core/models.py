@@ -145,6 +145,7 @@ class Lead(models.Model):
     organization = models.CharField(max_length=255, blank=True)
     role = models.CharField(max_length=255, blank=True)
     specialty = models.CharField(max_length=255, blank=True)
+    contact_url = models.URLField(max_length=500, blank=True, help_text='Org website or contact-page link (used for AI-suggested orgs where humans need to find the email manually)')
     geography = models.JSONField(default=dict, blank=True)
     source = models.CharField(max_length=30, choices=SOURCE_CHOICES, default=SOURCE_MANUAL)
     enrichment_status = models.CharField(max_length=30, choices=ENRICHMENT_CHOICES, default=ENRICHMENT_COMPLETE)

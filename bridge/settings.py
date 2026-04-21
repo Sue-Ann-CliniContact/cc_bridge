@@ -118,3 +118,19 @@ APOLLO_API_KEY = os.getenv('APOLLO_API_KEY', '')
 APOLLO_MONTHLY_BUDGET_CREDITS = int(os.getenv('APOLLO_MONTHLY_BUDGET_CREDITS', '1000'))
 
 APP_BASE_URL = os.getenv('APP_BASE_URL', 'http://localhost:8000')
+
+
+# ─── HTTPS / CSRF (Render production) ──────────────────
+# Django 4+ requires CSRF_TRUSTED_ORIGINS for POSTs over HTTPS. Default to
+# APP_BASE_URL so the Render domain Just Works; allow an env override for
+# multi-host setups (comma-separated).
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv('CSRF_TRUSTED_ORIGINS', APP_BASE_URL).split(',')
+    if origin.strip() and origin.strip().startswith(('http://', 'https://'))
+]
+
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')

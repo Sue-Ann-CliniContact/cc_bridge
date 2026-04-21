@@ -16,6 +16,12 @@ DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if h.strip()]
 
+# Render auto-injects RENDER_EXTERNAL_HOSTNAME. Include it unconditionally so a
+# missing/misformatted ALLOWED_HOSTS env var doesn't DisallowedHost us.
+_render_host = os.getenv('RENDER_EXTERNAL_HOSTNAME')
+if _render_host and _render_host not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(_render_host)
+
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -129,6 +135,9 @@ CSRF_TRUSTED_ORIGINS = [
     for origin in os.getenv('CSRF_TRUSTED_ORIGINS', APP_BASE_URL).split(',')
     if origin.strip() and origin.strip().startswith(('http://', 'https://'))
 ]
+_render_url = os.getenv('RENDER_EXTERNAL_URL')
+if _render_url and _render_url not in CSRF_TRUSTED_ORIGINS:
+    CSRF_TRUSTED_ORIGINS.append(_render_url)
 
 if not DEBUG:
     SESSION_COOKIE_SECURE = True

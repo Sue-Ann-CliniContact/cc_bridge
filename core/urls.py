@@ -23,5 +23,15 @@ urlpatterns = [
     path('api/leads/<int:lead_id>/enrich/', views.enrich_lead, name='enrich_lead'),
     path('api/leads/<int:lead_id>/find-contact/', views.find_org_contact, name='find_org_contact'),
     path('tools/cleanup-non-monday-leads/', views.cleanup_non_monday_leads_view, name='cleanup_non_monday_leads'),
+
+    # Campaigns (Phase 3)
+    path('projects/<int:project_id>/campaigns/new/', views.campaign_create, name='campaign_create'),
+    path('campaigns/<int:campaign_id>/', views.campaign_detail, name='campaign_detail'),
+    path('campaigns/<int:campaign_id>/redraft/', views.campaign_redraft, name='campaign_redraft'),
+    path('campaigns/<int:campaign_id>/update-sequence/', views.campaign_update_sequence, name='campaign_update_sequence'),
+    path('campaigns/<int:campaign_id>/launch/', views.campaign_launch, name='campaign_launch'),
+
+    # Instantly webhook
+    path('api/webhooks/instantly/', views.webhook_instantly, name='webhook_instantly'),
     path('api/instantly/ping/', views.test_instantly, name='test_instantly'),
 ]

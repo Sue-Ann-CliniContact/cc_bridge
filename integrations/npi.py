@@ -125,11 +125,19 @@ def search_multi(
 
 
 def _normalize(item: dict) -> dict:
-    """Map a raw NPI result to the shape expected by the sourcing pipeline."""
+    """Map a raw NPI result to the shape expected by the sourcing pipeline.
+
+    We pull everything useful CMS returns (street, fax, gender, license state,
+    enumeration dates, all taxonomies) into the geography JSON so future
+    location-specific projects can match without re-querying NPI.
+    """
     npi = str(item.get('number', '')) or ''
     basic = item.get('basic') or {}
     addresses = item.get('addresses') or []
-    practice = next((a for a in addresses if a.get('address_purpose') == 'LOCATION'), addresses[0] if addresses else {})
+    practice = next((a for a in addresses if a.get('address_purpose') == 'LOCATION'), None)
+    mailing = next((a for a in addresses if a.get('address_purpose') == 'MAILING'), None)
+    practice = practice or mailing or (addresses[0] if addresses else {})
+
     taxonomies = item.get('taxonomies') or []
     primary_tax = next((t for t in taxonomies if t.get('primary')), taxonomies[0] if taxonomies else {})
 
@@ -147,10 +155,34 @@ def _normalize(item: dict) -> dict:
         'specialty': (primary_tax.get('desc') or '').strip(),
         'taxonomy_code': taxonomy_code,
         'geography': {
+            # Practice address (primary — where the provider sees patients)
+            'street': (practice.get('address_1') or '').strip(),
+            'address_2': (practice.get('address_2') or '').strip(),
+            'city': (practice.get('city') or '').strip().title(),
             'state': (practice.get('state') or '').strip(),
             'postal_code': (practice.get('postal_code') or '').strip()[:5],
-            'city': (practice.get('city') or '').strip().title(),
+            'country': (practice.get('country_code') or '').strip(),
+            # Contact info (different from the main Lead.phone so we preserve both)
+            'practice_telephone': (practice.get('telephone_number') or '').strip(),
+            'fax': (practice.get('fax_number') or '').strip(),
+            # Provider metadata
+            'gender': (basic.get('gender') or '').strip(),
+            'enumeration_date': (basic.get('enumeration_date') or '').strip(),
+            'last_updated': (basic.get('last_updated') or '').strip(),
+            'status': (basic.get('status') or '').strip(),
+            # Taxonomy (primary specialty + license)
             'taxonomy_code': taxonomy_code,
+            'taxonomy_license_state': (primary_tax.get('state') or '').strip(),
+            'taxonomy_license': (primary_tax.get('license') or '').strip(),
+            'all_taxonomies': [
+                {
+                    'code': t.get('code'),
+                    'desc': t.get('desc'),
+                    'state': t.get('state'),
+                    'primary': t.get('primary'),
+                }
+                for t in taxonomies
+            ],
         },
         'phone': (practice.get('telephone_number') or '').strip(),
         # NPI registry doesn't include email

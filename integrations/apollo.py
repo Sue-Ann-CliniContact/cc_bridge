@@ -72,12 +72,30 @@ def enrich_person(
         'last_name': last_name,
         'organization_name': organization,
         'domain': domain,
+        # Unlocks the email on match (costs credits but is the whole point).
+        'reveal_personal_emails': True,
     }
+    if not any([first_name, last_name, organization, domain]):
+        raise RuntimeError(
+            'Apollo people/match needs at least a name or organization — '
+            'this lead has neither.'
+        )
+
     r = requests.post(f'{APOLLO_BASE}/people/match', json=payload, headers=_headers(), timeout=20)
-    r.raise_for_status()
+    if r.status_code >= 400:
+        raise RuntimeError(
+            f'Apollo {r.status_code}: {r.text[:300]}. Sent: first={first_name!r} '
+            f'last={last_name!r} org={organization!r} domain={domain!r}.'
+        )
     data = r.json() or {}
     _log_credits('people/match', 1, user=user, notes=f'{first_name} {last_name} @ {organization}'.strip())
     person = data.get('person') or {}
+    if not person:
+        # Apollo sometimes returns 200 with no person — surface that to the operator.
+        raise RuntimeError(
+            f'Apollo: no match for {first_name!r} {last_name!r} @ {organization!r}. '
+            f'Try adding the organization name, or edit the lead manually.'
+        )
     return {
         'email': person.get('email') or '',
         'phone': (person.get('phone_numbers') or [{}])[0].get('sanitized_number', '') if person.get('phone_numbers') else '',

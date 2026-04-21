@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}New campaign · {{ project.study_code }}{% endblock %}
+
+{% block content %}
+<a href="{% url 'project_detail' project.pk %}" class="text-sm text-cc-muted hover:text-cc-royal">← Back to {{ project.study_code }}</a>
+
+<h1 class="mt-3 text-3xl font-black tracking-tight text-cc-ink">New campaign</h1>
+<p class="mt-2 text-sm text-cc-muted">
+  Pick which project leads go in this campaign. Claude will draft the 3-step sequence from your
+  uploaded study assets and partner profile — you review and edit before pushing to Instantly.
+</p>
+
+{% if messages %}
+  <div class="mt-4 space-y-2 max-w-3xl">
+    {% for msg in messages %}
+      <div class="rounded-xl px-4 py-3 text-sm
+        {% if msg.level_tag == 'success' %}bg-emerald-50 text-emerald-700
+        {% elif msg.level_tag == 'warning' %}bg-amber-50 text-amber-800
+        {% else %}bg-slate-100 text-slate-700{% endif %}">{{ msg }}</div>
+    {% endfor %}
+  </div>
+{% endif %}
+
+<form method="post" class="mt-6 space-y-6">
+  {% csrf_token %}
+
+  <div class="surface-card p-6 max-w-3xl">
+    <label class="cc-label">Campaign name</label>
+    <input type="text" name="name" value="{{ suggested_name }}" class="cc-input" required>
+    <p class="mt-1 text-xs text-cc-muted">Used as the Instantly campaign name and in internal reports.</p>
+  </div>
+
+  <div class="surface-card overflow-hidden">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+      <div>
+        <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Available leads</h2>
+        <p class="mt-1 text-xs text-cc-muted">Leads on this project, with an email, not already on a campaign.</p>
+      </div>
+      <div class="text-xs text-cc-muted">
+        <label class="flex items-center gap-2">
+          <input type="checkbox" id="selectAll"> Select all
+        </label>
+      </div>
+    </div>
+
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 text-xs uppercase tracking-wider text-cc-muted">
+        <tr>
+          <th class="px-4 py-3 w-10"></th>
+          <th class="px-4 py-3 text-left">Name</th>
+          <th class="px-4 py-3 text-left">Organization</th>
+          <th class="px-4 py-3 text-left">Email</th>
+          <th class="px-4 py-3 text-left">Role</th>
+          <th class="px-4 py-3 text-left">Source</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for pl in available_leads %}
+          <tr>
+            <td class="px-4 py-3"><input type="checkbox" name="project_lead_ids" value="{{ pl.pk }}" class="row-select"></td>
+            <td class="px-4 py-3 font-medium text-cc-ink">{{ pl.lead.first_name }} {{ pl.lead.last_name }}</td>
+            <td class="px-4 py-3 text-cc-muted">{{ pl.lead.organization|default:"—" }}</td>
+            <td class="px-4 py-3 text-cc-ink">{{ pl.lead.email }}</td>
+            <td class="px-4 py-3 text-cc-muted">{{ pl.lead.role|default:"—" }}</td>
+            <td class="px-4 py-3"><span class="cc-chip muted text-[10px]">{{ pl.lead.get_source_display }}</span></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="px-4 py-12 text-center text-cc-muted text-sm">
+            No eligible leads. Add leads with emails from the Review page first.
+          </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="flex justify-end gap-3 max-w-3xl ml-auto">
+    <a href="{% url 'project_detail' project.pk %}" class="cc-btn cc-btn-ghost">Cancel</a>
+    <button type="submit" class="cc-btn cc-btn-primary">Create + draft sequence</button>
+  </div>
+</form>
+
+<script>
+const selectAll = document.getElementById('selectAll');
+if (selectAll) {
+  selectAll.addEventListener('change', (e) => {
+    document.querySelectorAll('.row-select').forEach(cb => cb.checked = e.target.checked);
+  });
+}
+</script>
+{% endblock %}

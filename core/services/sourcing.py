@@ -393,21 +393,31 @@ def enrich_lead_with_apollo(lead: Lead, *, user=None) -> dict:
     except Exception as exc:  # noqa: BLE001
         return {'ok': False, 'error': str(exc)}
 
-    updated = False
+    updated_fields = ['enrichment_status', 'updated_at']
     if match.get('email') and not lead.email:
         email = match['email'].strip().lower()
         if OptOut.objects.filter(email=email).exists():
             return {'ok': True, 'email': email, 'note': 'Email resolved but is opted-out — not saved.'}
         lead.email = email
-        updated = True
+        updated_fields.append('email')
     if match.get('phone') and not lead.phone:
         lead.phone = match['phone']
-        updated = True
+        updated_fields.append('phone')
     if match.get('title') and not lead.role:
         lead.role = match['title']
-        updated = True
+        updated_fields.append('role')
 
     lead.enrichment_status = Lead.ENRICHMENT_COMPLETE if lead.email else Lead.ENRICHMENT_FAILED
-    if updated:
-        lead.save(update_fields=['email', 'phone', 'role', 'enrichment_status', 'updated_at'])
-    return {'ok': True, 'email': lead.email, 'updated': updated}
+    lead.save(update_fields=list(set(updated_fields)))
+
+    if not lead.email:
+        return {
+            'ok': True,
+            'email': '',
+            'note': (
+                f'Apollo matched {match.get("title", "a person")} at this lead but did not '
+                f'reveal an email address. This usually means the lead needs a more specific '
+                f'organization/domain, or your Apollo plan does not include email reveal.'
+            ),
+        }
+    return {'ok': True, 'email': lead.email, 'updated': 'email' in updated_fields}

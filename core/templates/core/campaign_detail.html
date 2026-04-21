@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}{{ campaign.name }} · Campaign{% endblock %}
+
+{% block content %}
+<a href="{% url 'project_detail' project.pk %}" class="text-sm text-cc-muted hover:text-cc-royal">← Back to {{ project.study_code }}</a>
+
+<div class="mt-3 flex items-start justify-between gap-4">
+  <div>
+    <p class="text-xs font-bold uppercase tracking-wider text-cc-muted">{{ project.study_code }}</p>
+    <h1 class="mt-1 text-3xl font-black tracking-tight text-cc-ink">{{ campaign.name }}</h1>
+    <p class="mt-1 text-xs text-cc-muted">
+      {{ project_leads.count }} lead{{ project_leads.count|pluralize }} ·
+      Instantly ID: {{ campaign.instantly_campaign_id|default:"— not yet launched —" }}
+    </p>
+  </div>
+  <span class="cc-chip {% if campaign.status == 'active' %}ok{% elif campaign.status == 'awaiting_approval' %}warn{% else %}muted{% endif %}">
+    {{ campaign.get_status_display }}
+  </span>
+</div>
+
+{% if messages %}
+  <div class="mt-4 space-y-2 max-w-4xl">
+    {% for msg in messages %}
+      <div class="rounded-xl px-4 py-3 text-sm
+        {% if msg.level_tag == 'success' %}bg-emerald-50 text-emerald-700
+        {% elif msg.level_tag == 'warning' %}bg-amber-50 text-amber-800
+        {% elif msg.level_tag == 'error' %}bg-red-50 text-red-700
+        {% else %}bg-slate-100 text-slate-700{% endif %}">{{ msg }}</div>
+    {% endfor %}
+  </div>
+{% endif %}
+
+<!-- Sequence editor -->
+<form method="post" action="{% url 'campaign_update_sequence' campaign.pk %}" class="mt-6">
+  {% csrf_token %}
+
+  <div class="flex items-center justify-between max-w-4xl">
+    <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Sequence</h2>
+    <form method="post" action="{% url 'campaign_redraft' campaign.pk %}" class="inline">
+      {% csrf_token %}
+      <button type="submit" class="cc-btn cc-btn-ghost text-xs">↻ Redraft with AI</button>
+    </form>
+  </div>
+
+  {% if sequence_steps %}
+    <div class="mt-4 space-y-4 max-w-4xl">
+      {% for step in sequence_steps %}
+        <div class="surface-card p-6">
+          <div class="flex items-start justify-between mb-3 gap-4">
+            <div>
+              <p class="text-xs font-bold uppercase tracking-wider text-cc-royal">Step {{ step.step_num|default:forloop.counter }}</p>
+              {% if step.rationale %}<p class="mt-1 text-xs text-cc-muted">{{ step.rationale }}</p>{% endif %}
+            </div>
+            <label class="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="step_{{ forloop.counter0 }}_approved" {% if step.approved %}checked{% endif %}>
+              <span class="font-semibold {% if step.approved %}text-emerald-700{% else %}text-cc-muted{% endif %}">Approved</span>
+            </label>
+          </div>
+
+          <div class="grid gap-3 md:grid-cols-[1fr_120px]">
+            <div>
+              <label class="cc-label">Subject</label>
+              <input type="text" name="step_{{ forloop.counter0 }}_subject" value="{{ step.subject }}" class="cc-input">
+            </div>
+            <div>
+              <label class="cc-label">Delay (days)</label>
+              <input type="number" name="step_{{ forloop.counter0 }}_delay_days" value="{{ step.delay_days|default:0 }}" min="0" class="cc-input">
+            </div>
+          </div>
+          <div class="mt-3">
+            <label class="cc-label">Body</label>
+            <textarea name="step_{{ forloop.counter0 }}_body" rows="9" class="cc-input font-mono text-xs">{{ step.body }}</textarea>
+            <p class="mt-1 text-xs text-cc-muted">
+              Merge vars: <code>{% templatetag openvariable %}first_name{% templatetag closevariable %}</code>,
+              <code>{% templatetag openvariable %}landing_page_url{% templatetag closevariable %}</code>
+            </p>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <div class="mt-4 flex justify-end gap-3 max-w-4xl">
+      <button type="submit" class="cc-btn cc-btn-primary">Save edits</button>
+    </div>
+  {% else %}
+    <div class="surface-card mt-4 p-12 text-center max-w-4xl">
+      <p class="text-sm text-cc-muted">No draft yet. Use "Redraft with AI" above to have Claude draft the 3-step sequence from your study assets.</p>
+    </div>
+  {% endif %}
+</form>
+
+<!-- Launch -->
+{% if campaign.status != 'active' and campaign.status != 'completed' and sequence_steps %}
+  <div class="surface-card mt-8 p-6 max-w-4xl">
+    <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Launch to Instantly</h2>
+    <p class="mt-1 text-xs text-cc-muted">Creates the campaign on Instantly with these sequence steps and pushes the {{ project_leads.count }} selected leads.</p>
+
+    <form method="post" action="{% url 'campaign_launch' campaign.pk %}" class="mt-4">
+      {% csrf_token %}
+      <label class="cc-label">Sending accounts</label>
+      {% if sending_accounts %}
+        <div class="space-y-1">
+          {% for acct in sending_accounts %}
+            <label class="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="sending_account_email" value="{{ acct.email }}">
+              <span class="text-cc-ink">{{ acct.email }}</span>
+              <span class="text-xs text-cc-muted">· {{ acct.status }} · daily limit {{ acct.daily_limit }}</span>
+            </label>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="text-sm text-cc-muted">
+          No sending accounts returned from Instantly. Add one in the Instantly dashboard
+          (Accounts → Add sending account), then refresh. For a manual override, type
+          one or more comma-separated addresses below.
+        </p>
+        <input type="text" name="sending_account_email" class="cc-input mt-2" placeholder="you@example.com">
+      {% endif %}
+
+      <div class="mt-4 flex justify-end">
+        <button type="submit"
+                class="cc-btn cc-btn-primary"
+                onclick="return confirm('Launch this campaign on Instantly? This will send emails on the configured schedule.');">
+          Launch →
+        </button>
+      </div>
+    </form>
+  </div>
+{% endif %}
+
+<!-- Leads -->
+<div class="mt-8 max-w-4xl">
+  <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Leads in this campaign</h2>
+  <div class="surface-card mt-3 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 text-xs uppercase tracking-wider text-cc-muted">
+        <tr>
+          <th class="px-4 py-3 text-left">Name</th>
+          <th class="px-4 py-3 text-left">Organization</th>
+          <th class="px-4 py-3 text-left">Email</th>
+          <th class="px-4 py-3 text-left">Status</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for pl in project_leads %}
+          <tr>
+            <td class="px-4 py-3 font-medium text-cc-ink">{{ pl.lead.first_name }} {{ pl.lead.last_name }}</td>
+            <td class="px-4 py-3 text-cc-muted">{{ pl.lead.organization|default:"—" }}</td>
+            <td class="px-4 py-3 text-cc-ink">{{ pl.lead.email }}</td>
+            <td class="px-4 py-3"><span class="cc-chip muted text-[10px]">{{ pl.get_campaign_status_display }}</span></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="px-4 py-8 text-center text-cc-muted">No leads attached.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

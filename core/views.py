@@ -1,6 +1,8 @@
 import csv
 import io
+import json
 
+from django.conf import settings as django_settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
@@ -8,6 +10,7 @@ from django.db.models import Exists, OuterRef, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
 from integrations import ai_sourcing as ai_sourcing_client
@@ -16,7 +19,8 @@ from integrations import instantly as instantly_client
 from integrations import monday_client
 
 from .forms import LeadEditForm, PartnerProfileForm, ProjectForm, StudyAssetForm
-from .models import Lead, OptOut, PartnerProfile, Project, ProjectLead, StudyAsset
+from .models import Campaign, Lead, OptOut, OutreachEvent, PartnerProfile, Project, ProjectLead, StudyAsset
+from .services import campaigns as campaigns_service
 from .services import sourcing
 
 
@@ -48,6 +52,7 @@ def project_detail(request, project_id):
         'project': project,
         'assets': project.assets.all(),
         'asset_form': asset_form,
+        'campaigns': project.campaigns.order_by('-created_at'),
     })
 
 
@@ -354,6 +359,202 @@ def find_org_contact(request, lead_id):
     lead = get_object_or_404(Lead, pk=lead_id)
     result = sourcing.find_contact_from_org_page(lead, user=request.user)
     return JsonResponse(result)
+
+
+# ──────────────────────────── Campaigns (Phase 3) ───────────────────────────
+
+@login_required
+def campaign_create(request, project_id):
+    project = get_object_or_404(Project, pk=project_id)
+
+    # Only offer ProjectLeads that (a) have an email and (b) aren't already on a campaign.
+    available_qs = (
+        ProjectLead.objects
+        .filter(project=project, campaign__isnull=True)
+        .exclude(lead__email__isnull=True)
+        .exclude(lead__email='')
+        .select_related('lead')
+        .order_by('-created_at')
+    )
+
+    if request.method == 'POST':
+        name = (request.POST.get('name') or '').strip() or f'{project.study_code} outreach — {timezone.now():%Y-%m-%d}'
+        lead_ids = [int(x) for x in request.POST.getlist('project_lead_ids') if x.isdigit()]
+        if not lead_ids:
+            messages.warning(request, 'Select at least one lead with an email.')
+            return redirect('campaign_create', project_id=project.pk)
+
+        campaign = campaigns_service.create_campaign_from_leads(
+            project, name=name, project_lead_ids=lead_ids, user=request.user,
+        )
+        try:
+            campaigns_service.draft_sequence(campaign, user=request.user)
+            messages.success(request, f'Campaign created and AI sequence drafted ({campaign.project_leads.count()} leads).')
+        except Exception as exc:  # noqa: BLE001
+            messages.warning(request, f'Campaign created but sequence draft failed: {exc}. Try "Regenerate" on the detail page.')
+        return redirect('campaign_detail', campaign_id=campaign.pk)
+
+    return render(request, 'core/campaign_form.html', {
+        'project': project,
+        'available_leads': available_qs,
+        'suggested_name': f'{project.study_code} outreach — {timezone.now():%Y-%m-%d}',
+    })
+
+
+@login_required
+def campaign_detail(request, campaign_id):
+    campaign = get_object_or_404(Campaign.objects.select_related('project'), pk=campaign_id)
+    project_leads = campaign.project_leads.select_related('lead').order_by('-created_at')
+
+    sending_accounts = []
+    if django_settings.INSTANTLY_API_KEY:
+        try:
+            sending_accounts = instantly_client.get_sending_accounts()
+        except Exception as exc:  # noqa: BLE001
+            messages.warning(request, f'Could not load Instantly sending accounts: {exc}')
+
+    return render(request, 'core/campaign_detail.html', {
+        'campaign': campaign,
+        'project': campaign.project,
+        'project_leads': project_leads,
+        'sending_accounts': sending_accounts,
+        'sequence_steps': campaign.sequence_config or [],
+    })
+
+
+@login_required
+@require_POST
+def campaign_redraft(request, campaign_id):
+    campaign = get_object_or_404(Campaign, pk=campaign_id)
+    try:
+        campaigns_service.draft_sequence(campaign, user=request.user)
+        messages.success(request, 'Sequence redrafted by Claude.')
+    except Exception as exc:  # noqa: BLE001
+        messages.error(request, f'Redraft failed: {exc}')
+    return redirect('campaign_detail', campaign_id=campaign.pk)
+
+
+@login_required
+@require_POST
+def campaign_update_sequence(request, campaign_id):
+    """Save edits from the sequence editor."""
+    campaign = get_object_or_404(Campaign, pk=campaign_id)
+    existing = campaign.sequence_config or []
+    steps = []
+    for i, existing_step in enumerate(existing):
+        subject = (request.POST.get(f'step_{i}_subject') or '').strip()
+        body = (request.POST.get(f'step_{i}_body') or '').strip()
+        delay_raw = request.POST.get(f'step_{i}_delay_days') or '0'
+        try:
+            delay = int(delay_raw)
+        except ValueError:
+            delay = 0
+        approved = request.POST.get(f'step_{i}_approved') == 'on'
+        steps.append({
+            **existing_step,
+            'step_num': existing_step.get('step_num') or (i + 1),
+            'subject': subject,
+            'body': body,
+            'delay_days': delay,
+            'approved': approved,
+        })
+    campaigns_service.update_sequence(campaign, steps=steps)
+    messages.success(request, 'Sequence saved.')
+    return redirect('campaign_detail', campaign_id=campaign.pk)
+
+
+@login_required
+@require_POST
+def campaign_launch(request, campaign_id):
+    campaign = get_object_or_404(Campaign, pk=campaign_id)
+    sending_emails = request.POST.getlist('sending_account_email')
+    sending_emails = [e.strip() for e in sending_emails if e and e.strip()]
+    result = campaigns_service.launch_campaign(
+        campaign,
+        sending_account_emails=sending_emails,
+        user=request.user,
+    )
+    if not result.get('ok'):
+        messages.error(request, f'Launch failed: {result.get("error", "unknown error")}')
+        return redirect('campaign_detail', campaign_id=campaign.pk)
+    push_errors = result.get('push_errors') or []
+    err_note = f' · push errors: {"; ".join(push_errors)[:200]}' if push_errors else ''
+    messages.success(
+        request,
+        f'Launched on Instantly (id {result["campaign_id"]}): pushed {result["pushed"]}, '
+        f'skipped {result["skipped_no_email"]} without email, {result["skipped_opt_out"]} opted out.{err_note}',
+    )
+    return redirect('campaign_detail', campaign_id=campaign.pk)
+
+
+@csrf_exempt
+def webhook_instantly(request):
+    """Receive Instantly event webhooks. No auth/CSRF (public endpoint).
+    Instantly doesn't sign payloads by default, so at minimum we require
+    INSTANTLY_WEBHOOK_SECRET as a header match if configured."""
+    if request.method != 'POST':
+        return JsonResponse({'ok': False, 'error': 'POST only'}, status=405)
+
+    secret = getattr(django_settings, 'INSTANTLY_WEBHOOK_SECRET', '') or ''
+    if secret:
+        supplied = request.headers.get('X-Instantly-Secret') or request.GET.get('secret', '')
+        if supplied != secret:
+            return JsonResponse({'ok': False, 'error': 'unauthorized'}, status=401)
+
+    try:
+        payload = json.loads(request.body or b'{}')
+    except json.JSONDecodeError:
+        return JsonResponse({'ok': False, 'error': 'invalid json'}, status=400)
+
+    event_type = (payload.get('event_type') or payload.get('event') or '').strip()
+    lead_email = (payload.get('lead_email') or payload.get('email') or '').strip().lower()
+    campaign_id = str(payload.get('campaign_id') or payload.get('campaign') or '')
+    ts_raw = payload.get('timestamp') or payload.get('time') or ''
+    ts = timezone.now()  # fallback — Instantly timestamps vary
+
+    # Map Instantly event names to our OutreachEvent.EVENT_TYPE values
+    status_map = {
+        'email_sent': (OutreachEvent.EVENT_EMAIL_SENT, ProjectLead.STATUS_SENT),
+        'email_opened': (OutreachEvent.EVENT_EMAIL_OPENED, ProjectLead.STATUS_OPENED),
+        'email_clicked': (OutreachEvent.EVENT_EMAIL_CLICKED, ProjectLead.STATUS_CLICKED),
+        'email_replied': (OutreachEvent.EVENT_EMAIL_REPLIED, ProjectLead.STATUS_REPLIED),
+        'email_bounced': (OutreachEvent.EVENT_EMAIL_BOUNCED, ProjectLead.STATUS_BOUNCED),
+        'lead_unsubscribed': (OutreachEvent.EVENT_UNSUBSCRIBED, ProjectLead.STATUS_UNSUBSCRIBED),
+    }
+
+    if event_type not in status_map or not lead_email:
+        # Still log it — makes debugging easier.
+        return JsonResponse({'ok': True, 'note': 'event not mapped; ignored', 'event_type': event_type}, status=200)
+
+    mapped_event, mapped_status = status_map[event_type]
+
+    # Find the ProjectLead: prefer match on campaign_id + email, else fall back to email
+    pl_qs = ProjectLead.objects.filter(lead__email__iexact=lead_email)
+    if campaign_id:
+        pl_qs = pl_qs.filter(campaign__instantly_campaign_id=campaign_id)
+    project_lead = pl_qs.first()
+
+    if not project_lead:
+        return JsonResponse({'ok': True, 'note': 'no matching ProjectLead', 'email': lead_email}, status=200)
+
+    OutreachEvent.objects.create(
+        project_lead=project_lead,
+        event_type=mapped_event,
+        timestamp=ts,
+        raw_payload=payload,
+    )
+    # Only advance status; don't downgrade (e.g. don't set 'sent' if we already have 'replied')
+    project_lead.campaign_status = mapped_status
+    project_lead.save(update_fields=['campaign_status', 'updated_at'])
+
+    # Auto-opt-out on unsubscribe
+    if event_type == 'lead_unsubscribed' and lead_email:
+        OptOut.objects.get_or_create(
+            email=lead_email,
+            defaults={'source': OptOut.SOURCE_INSTANTLY_WEBHOOK, 'reason': 'Unsubscribed via email link'},
+        )
+
+    return JsonResponse({'ok': True, 'project_lead_id': project_lead.pk, 'event_type': event_type})
 
 
 @login_required

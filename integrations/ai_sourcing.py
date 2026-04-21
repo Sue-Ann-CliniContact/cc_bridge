@@ -16,20 +16,27 @@ log = logging.getLogger(__name__)
 
 SUPPORT_GROUP_SYSTEM_PROMPT = (
     "You help a clinical-trial outreach team find legitimate US-based partner "
-    "organizations for a specific study. The study indication is stated explicitly "
-    "— your job is to propose orgs whose mission aligns with THAT indication, not "
-    "the broader therapeutic area.\n\n"
-    "Hard rule: every org you return must be directly relevant to the stated "
-    "indication and target_org_types. If the study is about HER2+ metastatic breast "
-    "cancer, you do NOT return 'Children's Tumor Foundation' (neurofibromatosis) or "
-    "generic 'American Cancer Society' unless that org has a program specifically "
-    "serving this patient population. Prefer small, indication-specific foundations "
-    "and condition-specific patient registries over giant umbrella charities.\n\n"
-    "Only include real, well-known US organizations with verifiable public websites "
-    "and missions. Do not invent names or URLs. Do not include hospitals, clinics, "
-    "or commercial CROs unless they run a relevant patient-support program.\n\n"
-    "For each org, also propose 1-3 likely contact roles at that specific type of "
-    "org — align these with the study's target_contact_roles where possible."
+    "organizations for a specific study. You return a list ordered from most "
+    "indication-specific to most general.\n\n"
+    "Preferred (top of list): foundations and registries whose mission directly "
+    "targets the stated indication. Include these first even if they're smaller. "
+    "If the study is about HER2+ metastatic breast cancer, the top entries are "
+    "HER2-focused or metastatic-breast-cancer-focused foundations.\n\n"
+    "Secondary (further down the list): broader therapeutic-area orgs with relevant "
+    "programs — e.g., the American Cancer Society for any oncology study, the "
+    "Leukemia & Lymphoma Society for any blood-cancer study. Include these so the "
+    "team has options; mark them clearly with a broader description.\n\n"
+    "Exclude: organizations unrelated to the indication's therapeutic area. No "
+    "children's tumor foundations for adult breast cancer studies, no heart-disease "
+    "charities for oncology studies, etc.\n\n"
+    "Aim for 15-25 orgs total. Don't return an empty list unless the study materials "
+    "are genuinely unreadable — if the indication is narrow, fill the list with "
+    "broader-therapeutic-area orgs instead of returning nothing.\n\n"
+    "Only include real, well-known US organizations with verifiable public websites. "
+    "Do not invent names or URLs. Do not include hospitals, clinics, or commercial "
+    "CROs unless they run a relevant patient-support program.\n\n"
+    "For each org, propose 1-3 likely contact roles at that specific type of org — "
+    "align these with the study's target_contact_roles where possible."
 )
 
 SUPPORT_GROUP_TOOL_SCHEMA = {
@@ -385,6 +392,116 @@ def suggest_partner_profile(*, project_name: str, study_code: str, asset_texts: 
         'rationale': (result.get('rationale') or '').strip(),
     }
 
+
+# ──────────────────────── email-sequence drafting ───────────────────────────
+
+EMAIL_SEQUENCE_SYSTEM_PROMPT = (
+    "You draft a short, professional email sequence for a clinical-trial outreach "
+    "campaign. You write as the CliniContact team reaching out to clinicians, "
+    "research coordinators, or patient-advocacy organizations inviting them to "
+    "refer eligible patients to a study.\n\n"
+    "Ground rules (non-negotiable):\n"
+    "- Base every sentence on the approved study materials provided. Never "
+    "fabricate clinical claims, inclusion criteria, phase numbers, efficacy, or "
+    "safety statistics that are not in the source.\n"
+    "- Tone: respectful of the recipient's time, plain-spoken, no sales hype, no "
+    "exclamation points, no fake urgency.\n"
+    "- Always include a clear, specific CTA.\n"
+    "- Use the placeholder {{landing_page_url}} for the study landing page link; "
+    "do not paste a URL yourself.\n"
+    "- You MAY use {{first_name}} once per email; avoid other merge vars.\n"
+    "- End each email with a single closing line like 'Best,\\nThe CliniContact "
+    "team' — the actual sending signature is applied by Instantly per sending "
+    "account.\n\n"
+    "Return a 3-step sequence via the return_email_sequence tool:\n"
+    "Step 1 (delay 0): cold intro. Subject ≤ 60 chars. Body 120-180 words. "
+    "Name the indication, describe who the study is for, invite review of the "
+    "landing page.\n"
+    "Step 2 (delay 4 days): brief follow-up. Subject short, references step 1. "
+    "Body ≤ 100 words. No new clinical info — a respectful nudge.\n"
+    "Step 3 (delay 8 days): value-add close. Subject distinct. Body 100-140 "
+    "words. Re-state the patient benefit in one line, soft CTA, signal we won't "
+    "keep emailing."
+)
+
+EMAIL_SEQUENCE_TOOL_SCHEMA = {
+    'type': 'object',
+    'properties': {
+        'steps': {
+            'type': 'array',
+            'description': 'Ordered 3-step sequence',
+            'items': {
+                'type': 'object',
+                'properties': {
+                    'step_num': {'type': 'integer', 'description': '1, 2, or 3'},
+                    'delay_days': {'type': 'integer', 'description': 'Days after previous step (step 1 = 0)'},
+                    'subject': {'type': 'string'},
+                    'body': {'type': 'string', 'description': 'Plaintext body with {{first_name}} and {{landing_page_url}} placeholders'},
+                    'rationale': {'type': 'string', 'description': 'One short sentence on what this step does'},
+                },
+                'required': ['step_num', 'subject', 'body', 'delay_days'],
+            },
+        },
+    },
+    'required': ['steps'],
+}
+
+
+def draft_email_sequence(
+    *,
+    project_name: str,
+    study_code: str,
+    asset_texts: list[str],
+    profile,
+    landing_page_url: str = '',
+    user=None,
+) -> list[dict]:
+    """Ask Claude to draft a 3-step outreach sequence grounded in the study assets."""
+    profile_ctx = (
+        f"Study indication: {profile.study_indication or '(not set)'}\n"
+        f"Patient population: {profile.patient_population_description or '(not set)'}\n"
+        f"Partner type receiving these emails: {profile.get_partner_type_display()}\n"
+        f"Target contact roles: {', '.join(profile.target_contact_roles or []) or '(not set)'}"
+    )
+    joined_assets = '\n\n---\n\n'.join(t.strip() for t in asset_texts if t and t.strip()) or '(no assets uploaded)'
+    landing_line = f"Landing page URL (will substitute for {{{{landing_page_url}}}}): {landing_page_url}" if landing_page_url else "Landing page URL not configured — still use {{landing_page_url}} placeholder."
+
+    prompt = (
+        f"Project: {project_name}\n"
+        f"Study code: {study_code}\n\n"
+        f"Targeting context:\n{profile_ctx}\n\n"
+        f"{landing_line}\n\n"
+        f"Approved study materials (your only source of clinical claims):\n---\n{joined_assets[:8000]}\n---\n\n"
+        f"Draft the 3-step sequence via return_email_sequence."
+    )
+    result = AIService.call_structured(
+        prompt=prompt,
+        system_prompt=EMAIL_SEQUENCE_SYSTEM_PROMPT,
+        tool_name='return_email_sequence',
+        tool_description='Return a 3-step outreach email sequence drafted from the study materials.',
+        tool_schema=EMAIL_SEQUENCE_TOOL_SCHEMA,
+        function_name='draft_email_sequence',
+        user=user,
+        max_tokens=3000,
+    )
+    steps = result.get('steps') if isinstance(result, dict) else []
+    normalized = []
+    for i, s in enumerate(steps or []):
+        if not isinstance(s, dict):
+            continue
+        normalized.append({
+            'step_num': int(s.get('step_num') or (i + 1)),
+            'delay_days': int(s.get('delay_days') or (0 if i == 0 else 4 * i)),
+            'subject': (s.get('subject') or '').strip(),
+            'body': (s.get('body') or '').strip(),
+            'rationale': (s.get('rationale') or '').strip(),
+            'approved': False,
+        })
+    log.info('Drafted email sequence: %d steps for %s', len(normalized), study_code)
+    return normalized
+
+
+# ──────────────────────── helpers ───────────────────────────────────────────
 
 def _format_geography(geography: dict) -> str:
     if not geography:

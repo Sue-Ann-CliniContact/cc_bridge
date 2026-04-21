@@ -228,6 +228,7 @@ class ProjectLead(models.Model):
 
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='project_leads')
     lead = models.ForeignKey(Lead, on_delete=models.CASCADE, related_name='project_leads')
+    campaign = models.ForeignKey('Campaign', on_delete=models.SET_NULL, null=True, blank=True, related_name='project_leads')
     campaign_status = models.CharField(max_length=30, choices=STATUS_CHOICES, default=STATUS_QUEUED)
     instantly_lead_id = models.CharField(max_length=100, blank=True)
     monday_item_id = models.CharField(max_length=100, blank=True)

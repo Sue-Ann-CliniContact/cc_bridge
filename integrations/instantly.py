@@ -41,6 +41,104 @@ def ping(api_key: str | None = None) -> dict:
         return {'ok': False, 'error': str(exc)}
 
 
+def get_sending_accounts(api_key: str | None = None) -> list[dict]:
+    """Fetch the workspace's configured sending accounts (Gmail/Outlook/SMTP)."""
+    key = _get_key(api_key)
+    try:
+        r = requests.get(
+            f'{INSTANTLY_V2}/accounts',
+            params={'limit': 100},
+            headers={'Authorization': f'Bearer {key}'},
+            timeout=15,
+        )
+        r.raise_for_status()
+        data = r.json()
+        items = data if isinstance(data, list) else (data.get('items') or data.get('data') or [])
+        return [
+            {
+                'email': a.get('email') or a.get('sending_account_email') or '',
+                'status': a.get('status', ''),
+                'daily_limit': a.get('daily_limit', 0),
+            }
+            for a in items
+            if (a.get('email') or a.get('sending_account_email'))
+        ]
+    except requests.RequestException as exc:
+        log.warning('Failed to fetch Instantly sending accounts: %s', exc)
+        return []
+
+
+def create_campaign(
+    *,
+    name: str,
+    sequence_steps: list[dict],
+    sending_account_emails: list[str],
+    api_key: str | None = None,
+    daily_max_leads: int = 30,
+) -> dict:
+    """Create an Instantly v2 campaign with a multi-step email sequence.
+
+    sequence_steps: [{subject, body, delay_days}, ...] — same shape Bridge stores.
+    sending_account_emails: ["user@example.com", ...] — pulled from get_sending_accounts.
+
+    Returns {'id': campaign_id, 'raw': full_response} on success.
+    """
+    key = _get_key(api_key)
+    if not sequence_steps:
+        raise RuntimeError('Cannot create campaign with empty sequence')
+    if not sending_account_emails:
+        raise RuntimeError('At least one sending account email is required')
+
+    steps = [
+        {
+            'type': 'email',
+            'delay': int(step.get('delay_days') or 0),
+            'variants': [{
+                'subject': step.get('subject') or '',
+                'body': step.get('body') or '',
+            }],
+        }
+        for step in sequence_steps
+    ]
+
+    payload = {
+        'name': name,
+        'campaign_schedule': {
+            'schedules': [
+                {
+                    'name': 'Business hours (M-F, 9-5 ET)',
+                    'timing': {'from': '09:00', 'to': '17:00'},
+                    'days': {'0': False, '1': True, '2': True, '3': True, '4': True, '5': True, '6': False},
+                    'timezone': 'America/New_York',
+                }
+            ],
+        },
+        'sequences': [{'steps': steps}],
+        'email_gap_min': 10,
+        'email_gap_max': 15,
+        'daily_max_leads': daily_max_leads,
+        'link_tracking': True,
+        'open_tracking': True,
+        'stop_on_reply': True,
+        'stop_on_auto_reply': True,
+        'email_list': sending_account_emails,
+    }
+
+    r = requests.post(
+        f'{INSTANTLY_V2}/campaigns',
+        json=payload,
+        headers={'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'},
+        timeout=30,
+    )
+    if r.status_code >= 400:
+        raise RuntimeError(f'Instantly campaign create {r.status_code}: {r.text[:500]}')
+    data = r.json() or {}
+    campaign_id = data.get('id') or (data.get('data') or {}).get('id')
+    if not campaign_id:
+        raise RuntimeError(f'Instantly campaign create: no id in response {str(data)[:300]}')
+    return {'id': campaign_id, 'raw': data}
+
+
 def get_campaigns(api_key: str | None = None) -> list[dict]:
     """Fetch campaigns. Tries v2 (Bearer auth), falls back to v1 (api_key query param)."""
     key = _get_key(api_key)

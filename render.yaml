@@ -10,7 +10,7 @@ services:
     runtime: python
     plan: starter
     buildCommand: "./build.sh"
-    startCommand: "gunicorn bridge.wsgi:application"
+    startCommand: "gunicorn --timeout 120 bridge.wsgi:application"
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.9"

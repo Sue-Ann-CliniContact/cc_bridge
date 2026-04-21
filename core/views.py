@@ -402,8 +402,16 @@ def _flash_sourcing_result(request, result):
     if result.errors:
         messages.warning(request, f"{result.source}: {' · '.join(result.errors)}")
         return
+    if result.candidates_found == 0:
+        messages.info(
+            request,
+            f"{result.source}: returned 0 candidates. Try broadening or narrowing the partner profile "
+            f"(different specialty, add a state filter, or switch partner type).",
+        )
+        return
+    conflict_note = f" · {len(result.conflicts)} conflicts" if result.conflicts else ''
     messages.success(
         request,
         f"{result.source}: {len(result.created)} new · {len(result.reused)} reused "
-        f"· {result.skipped_opted_out} opt-out skipped · {result.candidates_found} considered",
+        f"· {result.skipped_opted_out} opt-out skipped{conflict_note} · {result.candidates_found} considered",
     )

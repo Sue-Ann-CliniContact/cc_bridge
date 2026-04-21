@@ -110,6 +110,7 @@
           <th class="px-4 py-3 w-10"><input type="checkbox" id="selectAll"></th>
           <th class="px-4 py-3 text-left">Name</th>
           <th class="px-4 py-3 text-left">Organization</th>
+          <th class="px-4 py-3 text-left">Location</th>
           <th class="px-4 py-3 text-left">Specialty</th>
           <th class="px-4 py-3 text-left">Email</th>
           <th class="px-4 py-3 text-left">Source</th>
@@ -129,6 +130,7 @@
             </td>
             <td class="px-4 py-3 font-medium text-cc-ink">
               {{ lead.first_name }} {{ lead.last_name }}
+              {% if lead.role and lead.source == 'npi' %}<span class="text-xs text-cc-muted">{{ lead.role }}</span>{% endif %}
               {% if not lead.first_name and not lead.last_name %}
                 {% if lead.source == 'ai_suggested' and lead.email %}
                   <span class="cc-chip warn text-[10px]">Generic admin</span>
@@ -136,20 +138,28 @@
                   <span class="text-cc-muted">(org only)</span>
                 {% endif %}
               {% endif %}
+              {% if lead.npi %}
+                <a href="https://npiregistry.cms.hhs.gov/provider-view/{{ lead.npi }}"
+                   target="_blank" rel="noopener"
+                   class="ml-1 inline-block text-[11px] text-cc-royal hover:underline"
+                   title="View NPI {{ lead.npi }} on CMS Registry">↗ NPI</a>
+              {% endif %}
             </td>
             <td class="px-4 py-3 text-cc-ink">
               {{ lead.organization|default:"—" }}
               {% if lead.contact_url %}
                 <a href="{{ lead.contact_url }}" target="_blank" rel="noopener" class="ml-1 inline-block text-xs text-cc-royal hover:underline">↗ site</a>
               {% endif %}
-              {% if lead.geography.city or lead.geography.state %}
-                <p class="mt-0.5 text-[11px] text-cc-muted">
-                  📍 {{ lead.geography.city }}{% if lead.geography.city and lead.geography.state %}, {% endif %}{{ lead.geography.state }}
-                  {% if lead.geography.postal_code %} {{ lead.geography.postal_code }}{% endif %}
-                </p>
-              {% endif %}
               {% if lead.geography.suggested_roles %}
                 <p class="mt-0.5 text-[11px] text-cc-muted">Look for: {{ lead.geography.suggested_roles|join:" · " }}</p>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 text-cc-muted text-xs whitespace-nowrap">
+              {% if lead.geography.city or lead.geography.state %}
+                {{ lead.geography.city }}{% if lead.geography.city and lead.geography.state %}, {% endif %}{{ lead.geography.state }}
+                {% if lead.geography.postal_code %}<span class="text-cc-muted/70"> {{ lead.geography.postal_code }}</span>{% endif %}
+              {% else %}
+                —
               {% endif %}
             </td>
             <td class="px-4 py-3 text-cc-muted">{{ lead.specialty|default:"—" }}</td>
@@ -193,7 +203,7 @@
             </td>
           </tr>
         {% empty %}
-          <tr><td colspan="8" class="px-4 py-12 text-center text-cc-muted text-sm">
+          <tr><td colspan="9" class="px-4 py-12 text-center text-cc-muted text-sm">
             No leads match these filters. Try sourcing from NPI or AI above.
           </td></tr>
         {% endfor %}

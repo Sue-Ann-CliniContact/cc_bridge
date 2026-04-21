@@ -22,6 +22,8 @@ urlpatterns = [
     path('leads/<int:lead_id>/resolve-conflict/', views.lead_resolve_conflict, name='lead_resolve_conflict'),
     path('api/leads/<int:lead_id>/enrich/', views.enrich_lead, name='enrich_lead'),
     path('api/leads/<int:lead_id>/find-contact/', views.find_org_contact, name='find_org_contact'),
+    path('api/leads/<int:lead_id>/web-contacts/', views.web_find_org_contacts, name='web_find_org_contacts'),
+    path('api/leads/<int:lead_id>/web-enrich/', views.web_enrich_clinician, name='web_enrich_clinician'),
     path('tools/cleanup-non-monday-leads/', views.cleanup_non_monday_leads_view, name='cleanup_non_monday_leads'),
 
     # Campaigns (Phase 3)

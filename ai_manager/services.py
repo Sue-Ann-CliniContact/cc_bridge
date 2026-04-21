@@ -95,6 +95,73 @@ class AIService:
         )
 
     @classmethod
+    def call_structured_with_web_search(
+        cls,
+        *,
+        prompt: str,
+        system_prompt: str | None = None,
+        tool_name: str,
+        tool_description: str,
+        tool_schema: dict,
+        function_name: str = 'web_search',
+        user=None,
+        max_tokens: int = 4096,
+        max_web_searches: int = 5,
+    ) -> dict:
+        """Like call_structured but Claude has access to Anthropic's built-in
+        web_search server tool so it can ground its answer in live web pages.
+        Claude performs up to max_web_searches, then fills the named tool with
+        the result. $0.01 per web search (Anthropic server-side pricing)."""
+        from anthropic import Anthropic
+
+        provider_row, provider_type, api_key, model_name = cls._resolve_provider()
+        if not api_key:
+            raise RuntimeError(f'No API key configured for provider {provider_type}')
+        if provider_type != AIProvider.PROVIDER_ANTHROPIC:
+            raise NotImplementedError('Web search is currently Anthropic-only')
+
+        client = Anthropic(api_key=api_key)
+        kwargs = {
+            'model': model_name,
+            'max_tokens': max_tokens,
+            'messages': [{'role': 'user', 'content': prompt}],
+            'tools': [
+                {'type': 'web_search_20250305', 'name': 'web_search', 'max_uses': max_web_searches},
+                {'name': tool_name, 'description': tool_description, 'input_schema': tool_schema},
+            ],
+            'tool_choice': {'type': 'tool', 'name': tool_name},
+        }
+        if system_prompt:
+            kwargs['system'] = system_prompt
+
+        resp = client.messages.create(**kwargs)
+
+        tool_input: dict = {}
+        for block in resp.content:
+            if getattr(block, 'type', None) == 'tool_use' and getattr(block, 'name', None) == tool_name:
+                tool_input = dict(block.input or {})
+                break
+
+        input_tokens = getattr(resp.usage, 'input_tokens', 0) or 0
+        output_tokens = getattr(resp.usage, 'output_tokens', 0) or 0
+        # Web-search usage billed separately by Anthropic; rough add to our cost log.
+        server_tool = getattr(resp.usage, 'server_tool_use', None)
+        web_search_count = getattr(server_tool, 'web_search_requests', 0) if server_tool else 0
+
+        from decimal import Decimal
+        AIUsageLog.objects.create(
+            user=user,
+            provider=provider_row,
+            function_name=function_name,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost=_estimate_cost(provider_type, input_tokens, output_tokens) + Decimal(web_search_count) * Decimal('0.01'),
+            prompt=prompt[:2000],
+            response=str(tool_input)[:4000],
+        )
+        return tool_input
+
+    @classmethod
     def call_structured(
         cls,
         *,

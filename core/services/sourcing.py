@@ -379,6 +379,134 @@ def import_from_monday_board(
     return result
 
 
+@transaction.atomic
+def find_org_contacts_via_web(org_lead: Lead, *, user=None) -> dict:
+    """Use Claude + web_search to find contacts for an advocacy/support-group org.
+    Persists named contacts AND generic admin emails (info@, contact@) as Leads.
+    """
+    target_roles = (org_lead.geography or {}).get('suggested_roles') or []
+    try:
+        result = ai_sourcing.find_org_contacts_via_web(
+            org_name=org_lead.organization,
+            website_url=org_lead.contact_url,
+            target_roles=target_roles,
+            user=user,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {'ok': False, 'error': str(exc)}
+
+    contacts = result.get('contacts') or []
+    fallbacks = result.get('fallback_emails') or []
+
+    all_emails = [c.get('email') for c in contacts if c.get('email')] + [f['email'] for f in fallbacks]
+    opted_out = set(OptOut.objects.filter(email__in=all_emails).values_list('email', flat=True))
+
+    created_pks = []
+    # Named contacts
+    for c in contacts:
+        email = c.get('email')
+        if email and email in opted_out:
+            continue
+        candidate = {
+            'first_name': c['first_name'],
+            'last_name': c['last_name'],
+            'role': c['role'] or 'Contact',
+            'email': email,
+            'organization': org_lead.organization,
+            'specialty': org_lead.specialty,
+            'contact_url': c.get('source_url') or org_lead.contact_url,
+            'geography': {'notes': c.get('notes', '')},
+        }
+        lead, created, _ = _persist_candidate(
+            candidate,
+            default_source=Lead.SOURCE_AI_SUGGESTED,
+            default_enrichment=Lead.ENRICHMENT_COMPLETE if email else Lead.ENRICHMENT_NEEDED,
+        )
+        if created:
+            created_pks.append(lead.pk)
+    # Fallback generic emails (no name, just generic admin inbox)
+    for fb in fallbacks:
+        if fb['email'] in opted_out:
+            continue
+        candidate = {
+            'first_name': '',
+            'last_name': '',
+            'role': f'General inquiries ({fb.get("context") or "admin inbox"})',
+            'email': fb['email'],
+            'organization': org_lead.organization,
+            'specialty': org_lead.specialty,
+            'contact_url': fb.get('source_url') or org_lead.contact_url,
+            'geography': {'notes': 'Generic admin/info email — use to request redirect to the right contact'},
+        }
+        lead, created, _ = _persist_candidate(
+            candidate,
+            default_source=Lead.SOURCE_AI_SUGGESTED,
+            default_enrichment=Lead.ENRICHMENT_COMPLETE,
+        )
+        if created:
+            created_pks.append(lead.pk)
+
+    return {
+        'ok': True,
+        'created_count': len(created_pks),
+        'contacts_count': len(contacts),
+        'fallback_count': len(fallbacks),
+    }
+
+
+@transaction.atomic
+def enrich_clinician_via_web(lead: Lead, *, user=None) -> dict:
+    """Use Claude + web_search to find a clinician's email from hospital/faculty pages."""
+    if not lead.first_name and not lead.last_name:
+        return {'ok': False, 'error': 'Lead needs a first or last name to search.'}
+
+    geo = lead.geography or {}
+    try:
+        result = ai_sourcing.find_clinician_email_via_web(
+            first_name=lead.first_name,
+            last_name=lead.last_name,
+            specialty=lead.specialty,
+            city=geo.get('city', ''),
+            state=geo.get('state', ''),
+            npi=lead.npi or '',
+            user=user,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {'ok': False, 'error': str(exc)}
+
+    update_fields = set()
+    if result['email'] and not lead.email:
+        email = result['email']
+        if OptOut.objects.filter(email=email).exists():
+            return {'ok': True, 'email': email, 'note': 'Email found but is opted-out — not saved.'}
+        lead.email = email
+        update_fields.add('email')
+    if result['affiliation'] and not lead.organization:
+        lead.organization = result['affiliation']
+        update_fields.add('organization')
+    if result['role'] and not lead.role:
+        lead.role = result['role']
+        update_fields.add('role')
+    if result['source_url'] and not lead.contact_url:
+        lead.contact_url = result['source_url']
+        update_fields.add('contact_url')
+
+    lead.enrichment_status = Lead.ENRICHMENT_COMPLETE if lead.email else Lead.ENRICHMENT_FAILED
+    update_fields.add('enrichment_status')
+    update_fields.add('updated_at')
+    lead.save(update_fields=list(update_fields))
+
+    return {
+        'ok': True,
+        'email': lead.email,
+        'affiliation': result['affiliation'],
+        'role': result['role'],
+        'source_url': result['source_url'],
+        'confidence': result['confidence'],
+        'note': result.get('notes', ''),
+    }
+
+
 def enrich_lead_with_apollo(lead: Lead, *, user=None) -> dict:
     """Call Apollo people/match to fill in email/phone/title on a Lead."""
     if not apollo.is_configured():

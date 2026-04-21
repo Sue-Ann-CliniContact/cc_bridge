@@ -393,6 +393,195 @@ def suggest_partner_profile(*, project_name: str, study_code: str, asset_texts: 
     }
 
 
+# ──────────────────────── web-search-based contact finding ──────────────────
+
+ORG_CONTACTS_WEB_SYSTEM_PROMPT = (
+    "You research a single US organization and return real, verifiable staff "
+    "contacts suitable for clinical-trial partnership outreach. You use the "
+    "web_search tool to find the org's staff directory, leadership page, or "
+    "press releases. Do NOT invent names or emails. Prefer named contacts "
+    "from pages on the org's own domain or verified directories.\n\n"
+    "For each named person you find, return name + title + email (if publicly "
+    "posted) + the source URL where you verified the person's existence.\n\n"
+    "Also return 1-2 generic org emails (info@, contact@, admin@, "
+    "info@foundation.org, etc.) as 'fallback_emails' — these are not ideal but "
+    "they work as a way to ask the org to forward to the right person.\n\n"
+    "If no named staff can be found on the open web, return an empty contacts "
+    "list but still include the fallback generic emails. Always include at "
+    "least one fallback if the org has any public email at all."
+)
+
+ORG_CONTACTS_WEB_TOOL_SCHEMA = {
+    'type': 'object',
+    'properties': {
+        'contacts': {
+            'type': 'array',
+            'description': 'Named staff suitable for outreach',
+            'items': {
+                'type': 'object',
+                'properties': {
+                    'name': {'type': 'string'},
+                    'title': {'type': 'string'},
+                    'email': {'type': 'string', 'description': 'Email if publicly listed — otherwise empty'},
+                    'source_url': {'type': 'string', 'description': "URL where the person's name was verified"},
+                    'notes': {'type': 'string', 'description': 'One-line context'},
+                },
+                'required': ['name'],
+            },
+        },
+        'fallback_emails': {
+            'type': 'array',
+            'description': 'Generic org emails (info@, contact@) as backup',
+            'items': {
+                'type': 'object',
+                'properties': {
+                    'email': {'type': 'string'},
+                    'context': {'type': 'string', 'description': 'What this inbox handles per the site'},
+                    'source_url': {'type': 'string'},
+                },
+                'required': ['email'],
+            },
+        },
+    },
+    'required': ['contacts', 'fallback_emails'],
+}
+
+
+def find_org_contacts_via_web(
+    *,
+    org_name: str,
+    website_url: str = '',
+    target_roles: list[str] | None = None,
+    user=None,
+) -> dict:
+    """Search the web for named contacts at an org. Returns {contacts, fallback_emails}."""
+    target_roles = target_roles or []
+    roles_str = (
+        ', '.join(target_roles)
+        if target_roles
+        else 'Director / VP of patient services or outreach, Executive Director, Director of Clinical Research, Patient Navigator, Chief Medical Officer'
+    )
+    site_hint = f' The org website is {website_url} — start there.' if website_url else ''
+
+    prompt = (
+        f"Organization: {org_name}.{site_hint}\n\n"
+        f"Preferred contact roles: {roles_str}\n\n"
+        f"Use web_search (up to 5 searches) to find the org's staff/leadership "
+        f"or an authoritative page listing their people. Return results via "
+        f"return_org_contacts — include fallback admin emails as backup."
+    )
+    result = AIService.call_structured_with_web_search(
+        prompt=prompt,
+        system_prompt=ORG_CONTACTS_WEB_SYSTEM_PROMPT,
+        tool_name='return_org_contacts',
+        tool_description='Return named staff contacts and fallback admin emails.',
+        tool_schema=ORG_CONTACTS_WEB_TOOL_SCHEMA,
+        function_name='find_org_contacts_via_web',
+        user=user,
+        max_tokens=4096,
+        max_web_searches=5,
+    )
+
+    contacts = []
+    for c in (result.get('contacts') or []):
+        if not isinstance(c, dict) or not c.get('name'):
+            continue
+        name_parts = c.get('name', '').strip().split(' ', 1)
+        contacts.append({
+            'first_name': name_parts[0] if name_parts else '',
+            'last_name': name_parts[1] if len(name_parts) > 1 else '',
+            'role': (c.get('title') or '').strip(),
+            'email': (c.get('email') or '').strip().lower() or None,
+            'source_url': (c.get('source_url') or '').strip(),
+            'notes': (c.get('notes') or '').strip(),
+        })
+
+    fallbacks = []
+    for fb in (result.get('fallback_emails') or []):
+        if not isinstance(fb, dict) or not fb.get('email'):
+            continue
+        fallbacks.append({
+            'email': fb.get('email', '').strip().lower(),
+            'context': (fb.get('context') or '').strip(),
+            'source_url': (fb.get('source_url') or '').strip(),
+        })
+
+    log.info(
+        'find_org_contacts_via_web: org=%r → %d contacts, %d fallback emails',
+        org_name, len(contacts), len(fallbacks),
+    )
+    return {'contacts': contacts, 'fallback_emails': fallbacks}
+
+
+CLINICIAN_EMAIL_WEB_SYSTEM_PROMPT = (
+    "You find the professional work email for a specific US-licensed clinician "
+    "using the web_search tool. Search hospital / health-system / academic "
+    "faculty / practice directories for the clinician's profile, then extract "
+    "their verified email.\n\n"
+    "Do NOT guess emails from patterns (firstname.lastname@domain). Only return "
+    "an email if it is explicitly posted on the clinician's institution website "
+    "or a reputable professional directory (AMA, Doximity profile, medical-"
+    "school faculty page). Empty email is better than wrong email.\n\n"
+    "If no email is publicly posted, return empty email but include the most "
+    "likely source_url where an operator could find contact info manually (e.g. "
+    "the clinician's institution profile page, or the department contact page)."
+)
+
+CLINICIAN_EMAIL_WEB_TOOL_SCHEMA = {
+    'type': 'object',
+    'properties': {
+        'email': {'type': 'string', 'description': 'Verified work email or empty'},
+        'affiliation': {'type': 'string', 'description': 'Hospital/practice/institution name'},
+        'role': {'type': 'string', 'description': 'Title at that affiliation'},
+        'source_url': {'type': 'string', 'description': 'Where you found this info'},
+        'confidence': {'type': 'string', 'enum': ['high', 'medium', 'low', 'not_found']},
+        'notes': {'type': 'string'},
+    },
+    'required': ['confidence'],
+}
+
+
+def find_clinician_email_via_web(
+    *,
+    first_name: str,
+    last_name: str,
+    specialty: str = '',
+    city: str = '',
+    state: str = '',
+    npi: str = '',
+    user=None,
+) -> dict:
+    location = ', '.join(x for x in [city, state] if x) or '(location unknown)'
+    prompt = (
+        f"Find the work email for this US-licensed clinician using web_search:\n"
+        f"Name: {first_name} {last_name}\n"
+        f"Specialty: {specialty or '(unknown)'}\n"
+        f"Location: {location}\n"
+        f"NPI: {npi or '(not provided)'}\n\n"
+        f"Return findings via return_clinician_email. If you can't find an email "
+        f"directly, return the best source_url so the operator can find it."
+    )
+    result = AIService.call_structured_with_web_search(
+        prompt=prompt,
+        system_prompt=CLINICIAN_EMAIL_WEB_SYSTEM_PROMPT,
+        tool_name='return_clinician_email',
+        tool_description='Return the clinician email, affiliation, and source URL.',
+        tool_schema=CLINICIAN_EMAIL_WEB_TOOL_SCHEMA,
+        function_name='find_clinician_email_via_web',
+        user=user,
+        max_tokens=2048,
+        max_web_searches=5,
+    )
+    return {
+        'email': (result.get('email') or '').strip().lower(),
+        'affiliation': (result.get('affiliation') or '').strip(),
+        'role': (result.get('role') or '').strip(),
+        'source_url': (result.get('source_url') or '').strip(),
+        'confidence': (result.get('confidence') or 'not_found').strip(),
+        'notes': (result.get('notes') or '').strip(),
+    }
+
+
 # ──────────────────────── email-sequence drafting ───────────────────────────
 
 EMAIL_SEQUENCE_SYSTEM_PROMPT = (

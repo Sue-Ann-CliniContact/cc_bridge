@@ -361,6 +361,24 @@ def find_org_contact(request, lead_id):
     return JsonResponse(result)
 
 
+@login_required
+@require_POST
+def web_find_org_contacts(request, lead_id):
+    """Use Claude + Anthropic web_search to find org contacts when page fetch fails."""
+    lead = get_object_or_404(Lead, pk=lead_id)
+    result = sourcing.find_org_contacts_via_web(lead, user=request.user)
+    return JsonResponse(result)
+
+
+@login_required
+@require_POST
+def web_enrich_clinician(request, lead_id):
+    """Use Claude + web_search to find a clinician's work email."""
+    lead = get_object_or_404(Lead, pk=lead_id)
+    result = sourcing.enrich_clinician_via_web(lead, user=request.user)
+    return JsonResponse(result)
+
+
 # ──────────────────────────── Campaigns (Phase 3) ───────────────────────────
 
 @login_required

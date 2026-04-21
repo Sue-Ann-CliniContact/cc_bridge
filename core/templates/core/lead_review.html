@@ -161,12 +161,21 @@
               {% if lead.source == 'ai_suggested' and lead.contact_url and not lead.email %}
                 <button type="button"
                         data-lead-id="{{ lead.pk }}"
-                        class="find-contact-btn cc-btn cc-btn-ghost text-xs mr-1">Find contact</button>
+                        class="find-contact-btn cc-btn cc-btn-ghost text-xs mr-1">Scrape site</button>
               {% endif %}
-              {% if apollo_configured and not lead.email %}
+              {% if lead.source == 'ai_suggested' %}
                 <button type="button"
                         data-lead-id="{{ lead.pk }}"
-                        class="enrich-btn cc-btn cc-btn-ghost text-xs mr-1">Enrich</button>
+                        class="web-orgs-btn cc-btn cc-btn-ghost text-xs mr-1">Web search</button>
+              {% elif not lead.email %}
+                <button type="button"
+                        data-lead-id="{{ lead.pk }}"
+                        class="web-enrich-btn cc-btn cc-btn-ghost text-xs mr-1">Web search</button>
+              {% endif %}
+              {% if apollo_configured and not lead.email and lead.source != 'ai_suggested' %}
+                <button type="button"
+                        data-lead-id="{{ lead.pk }}"
+                        class="enrich-btn cc-btn cc-btn-ghost text-xs mr-1">Apollo</button>
               {% endif %}
               <a href="{% url 'lead_edit' lead.pk %}?next={% url 'lead_review' project.pk %}" class="cc-btn cc-btn-ghost text-xs">Edit</a>
             </td>
@@ -255,6 +264,66 @@ document.querySelectorAll('.find-contact-btn').forEach(btn => {
       } else {
         btn.textContent = 'Error';
         alert(data.error || 'Contact extraction failed');
+      }
+    } catch (e) {
+      btn.textContent = 'Error';
+    }
+  });
+});
+
+document.querySelectorAll('.web-orgs-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const leadId = btn.dataset.leadId;
+    btn.disabled = true;
+    btn.textContent = 'Web searching... (30–60s)';
+    try {
+      const res = await fetch(`/api/leads/${leadId}/web-contacts/`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'X-CSRFToken': getCsrfToken() },
+      });
+      const data = await res.json();
+      if (data.ok) {
+        const n = data.created_count || 0;
+        const parts = [];
+        if (data.contacts_count) parts.push(`${data.contacts_count} named`);
+        if (data.fallback_count) parts.push(`${data.fallback_count} fallback`);
+        btn.textContent = n ? `+${n} (${parts.join(', ')})` : (parts.length ? parts.join(', ') + ' (dup)' : 'nothing found');
+        if (n > 0) setTimeout(() => window.location.reload(), 1200);
+      } else {
+        btn.textContent = 'Error';
+        alert(data.error || 'Web search failed');
+      }
+    } catch (e) {
+      btn.textContent = 'Error';
+    }
+  });
+});
+
+document.querySelectorAll('.web-enrich-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const leadId = btn.dataset.leadId;
+    btn.disabled = true;
+    btn.textContent = 'Web searching... (30–60s)';
+    try {
+      const res = await fetch(`/api/leads/${leadId}/web-enrich/`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'X-CSRFToken': getCsrfToken() },
+      });
+      const data = await res.json();
+      if (data.ok) {
+        if (data.email) {
+          btn.textContent = data.email;
+          setTimeout(() => window.location.reload(), 900);
+        } else if (data.source_url) {
+          btn.textContent = `No email — see ${data.source_url.slice(0, 40)}…`;
+        } else {
+          btn.textContent = data.note || 'Not found';
+        }
+      } else {
+        btn.textContent = 'Error';
+        alert(data.error || 'Web search failed');
       }
     } catch (e) {
       btn.textContent = 'Error';

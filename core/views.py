@@ -98,6 +98,10 @@ def partner_profile_edit(request, project_id):
         if suggestion:
             initial = {
                 'partner_type': suggestion.get('partner_type') or (profile.partner_type if profile else 'clinician'),
+                'study_indication': suggestion.get('study_indication') or (profile.study_indication if profile else ''),
+                'patient_population_description': suggestion.get('patient_population_description') or (profile.patient_population_description if profile else ''),
+                'target_org_types_csv': ', '.join(suggestion.get('target_org_types') or []),
+                'target_contact_roles_csv': ', '.join(suggestion.get('target_contact_roles') or []),
                 'specialty_tags_csv': ', '.join(suggestion.get('specialty_tags') or []),
                 'icd10_codes_csv': ', '.join(suggestion.get('icd10_codes') or []),
                 'target_size': suggestion.get('target_size') or (profile.target_size if profile else 100),

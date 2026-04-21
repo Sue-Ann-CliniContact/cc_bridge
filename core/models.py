@@ -96,7 +96,29 @@ class PartnerProfile(models.Model):
 
     project = models.OneToOneField(Project, on_delete=models.CASCADE, related_name='partner_profile')
     partner_type = models.CharField(max_length=30, choices=PARTNER_TYPE_CHOICES, default=PARTNER_CLINICIAN)
-    specialty_tags = models.JSONField(default=list, blank=True, help_text='List of therapeutic-area / specialty tags')
+
+    # Narrow, indication-level context — what the study is actually recruiting for.
+    # These drive AI org suggestions so we stop getting generic "cancer orgs" when
+    # the study is specific to, say, HER2+ metastatic breast cancer.
+    study_indication = models.CharField(
+        max_length=500, blank=True,
+        help_text='Specific clinical condition the study targets (e.g. "metastatic triple-negative breast cancer")',
+    )
+    patient_population_description = models.TextField(
+        blank=True,
+        help_text='2–4 sentences describing the target patients (disease stage, age, key inclusion, demographics)',
+    )
+    target_org_types = models.JSONField(
+        default=list, blank=True,
+        help_text='Categories of orgs to target (e.g. ["indication-specific patient advocacy", "NCI-designated cancer centers"])',
+    )
+    target_contact_roles = models.JSONField(
+        default=list, blank=True,
+        help_text='Specific titles we want to reach (e.g. ["Principal Investigator", "Clinical Research Coordinator"])',
+    )
+
+    # Broader taxonomy used for NPI sourcing + filtering
+    specialty_tags = models.JSONField(default=list, blank=True, help_text='CMS NPI taxonomy names (e.g. "Medical Oncology")')
     icd10_codes = models.JSONField(default=list, blank=True)
     geography = models.JSONField(default=dict, blank=True, help_text="e.g. {'type':'national'} or {'type':'state','states':['NY']}")
     target_size = models.PositiveIntegerField(default=100)

@@ -52,8 +52,41 @@
     </div>
   </div>
 
+  <div class="pt-4 border-t border-slate-100">
+    <p class="text-xs font-bold uppercase tracking-wider text-cc-royal">Study context</p>
+    <p class="mt-1 text-xs text-cc-muted">Used by Claude to propose indication-specific orgs instead of generic therapeutic-area orgs.</p>
+  </div>
+
   <div>
-    <label class="cc-label">Specialty tags</label>
+    <label class="cc-label">Study indication</label>
+    {{ form.study_indication }}
+    <p class="mt-1 text-xs text-cc-muted">{{ form.study_indication.help_text }}</p>
+  </div>
+
+  <div>
+    <label class="cc-label">Patient population description</label>
+    {{ form.patient_population_description }}
+    <p class="mt-1 text-xs text-cc-muted">{{ form.patient_population_description.help_text }}</p>
+  </div>
+
+  <div>
+    <label class="cc-label">Target org types</label>
+    {{ form.target_org_types_csv }}
+    <p class="mt-1 text-xs text-cc-muted">{{ form.target_org_types_csv.help_text }}</p>
+  </div>
+
+  <div>
+    <label class="cc-label">Target contact roles</label>
+    {{ form.target_contact_roles_csv }}
+    <p class="mt-1 text-xs text-cc-muted">{{ form.target_contact_roles_csv.help_text }}</p>
+  </div>
+
+  <div class="pt-4 border-t border-slate-100">
+    <p class="text-xs font-bold uppercase tracking-wider text-cc-royal">NPI sourcing</p>
+  </div>
+
+  <div>
+    <label class="cc-label">Specialty tags (NPI taxonomy)</label>
     {{ form.specialty_tags_csv }}
     <p class="mt-1 text-xs text-cc-muted">{{ form.specialty_tags_csv.help_text }}</p>
   </div>

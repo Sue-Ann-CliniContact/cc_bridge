@@ -15,16 +15,21 @@ log = logging.getLogger(__name__)
 # ──────────────────────── support-group suggestion ──────────────────────────
 
 SUPPORT_GROUP_SYSTEM_PROMPT = (
-    "You help a clinical-trial outreach team find legitimate US-based patient "
-    "advocacy organizations and support groups for a given therapeutic area. "
-    "These are public, well-known non-profits and condition-specific foundations — "
-    "you are NOT inventing anything, they have public websites and mission "
-    "statements that any search engine can verify. Examples of what you should "
-    "include (when relevant to the therapeutic area): American Cancer Society, "
-    "Leukemia & Lymphoma Society, National Kidney Foundation, American Heart "
-    "Association, JDRF, Crohn's & Colitis Foundation, Cystic Fibrosis "
-    "Foundation, Michael J. Fox Foundation, etc. Include between 15 and 30 orgs. "
-    "Do not include hospitals, clinics, or commercial CROs."
+    "You help a clinical-trial outreach team find legitimate US-based partner "
+    "organizations for a specific study. The study indication is stated explicitly "
+    "— your job is to propose orgs whose mission aligns with THAT indication, not "
+    "the broader therapeutic area.\n\n"
+    "Hard rule: every org you return must be directly relevant to the stated "
+    "indication and target_org_types. If the study is about HER2+ metastatic breast "
+    "cancer, you do NOT return 'Children's Tumor Foundation' (neurofibromatosis) or "
+    "generic 'American Cancer Society' unless that org has a program specifically "
+    "serving this patient population. Prefer small, indication-specific foundations "
+    "and condition-specific patient registries over giant umbrella charities.\n\n"
+    "Only include real, well-known US organizations with verifiable public websites "
+    "and missions. Do not invent names or URLs. Do not include hospitals, clinics, "
+    "or commercial CROs unless they run a relevant patient-support program.\n\n"
+    "For each org, also propose 1-3 likely contact roles at that specific type of "
+    "org — align these with the study's target_contact_roles where possible."
 )
 
 SUPPORT_GROUP_TOOL_SCHEMA = {
@@ -54,30 +59,70 @@ SUPPORT_GROUP_TOOL_SCHEMA = {
 }
 
 
-def suggest_support_groups(*, specialty_tags: list[str], geography: dict, limit: int = 30, user=None) -> list[dict]:
-    specialty_str = ', '.join(specialty_tags) if specialty_tags else '(not specified — pick broadly applicable orgs)'
+def suggest_support_groups(
+    *,
+    specialty_tags: list[str],
+    geography: dict,
+    study_indication: str = '',
+    patient_population_description: str = '',
+    target_org_types: list[str] | None = None,
+    target_contact_roles: list[str] | None = None,
+    asset_texts: list[str] | None = None,
+    limit: int = 30,
+    user=None,
+) -> list[dict]:
+    target_org_types = target_org_types or []
+    target_contact_roles = target_contact_roles or []
+    specialty_str = ', '.join(specialty_tags) if specialty_tags else '(not specified)'
     geo_str = _format_geography(geography)
+    org_types_str = '\n'.join(f'- {t}' for t in target_org_types) if target_org_types else '- (no preference stated)'
+    roles_str = ', '.join(target_contact_roles) if target_contact_roles else '(not specified)'
+    indication_line = (
+        f"Study indication (REQUIRED MATCH): {study_indication}"
+        if study_indication
+        else "Study indication: (not specified — fall back to specialty_tags for matching)"
+    )
+    pop_line = (
+        f"Patient population: {patient_population_description}"
+        if patient_population_description
+        else ""
+    )
+    asset_section = ''
+    if asset_texts:
+        joined_assets = '\n\n---\n\n'.join(t.strip() for t in asset_texts if t and t.strip())
+        if joined_assets.strip():
+            asset_section = (
+                f"\n\nStudy materials (for additional grounding — do not propose orgs "
+                f"unrelated to this indication):\n{joined_assets[:4000]}"
+            )
 
     prompt = (
-        f"Propose {min(limit, 30)} US-based patient support groups or advocacy "
-        f"organizations for a clinical trial outreach project.\n\n"
-        f"Therapeutic areas / specialties: {specialty_str}\n"
-        f"Geography: {geo_str}\n\n"
-        f"Use the return_support_groups tool to return your list."
+        f"Propose up to {min(limit, 30)} US-based partner organizations for this clinical trial.\n\n"
+        f"{indication_line}\n"
+        f"{pop_line}\n"
+        f"Therapeutic specialties (broad): {specialty_str}\n"
+        f"Target org categories (ranked):\n{org_types_str}\n"
+        f"Target contact roles: {roles_str}\n"
+        f"Geography: {geo_str}{asset_section}\n\n"
+        f"Use the return_support_groups tool. Every org must serve the specific "
+        f"indication above. Order from most indication-specific to most general."
     )
 
     result = AIService.call_structured(
         prompt=prompt,
         system_prompt=SUPPORT_GROUP_SYSTEM_PROMPT,
         tool_name='return_support_groups',
-        tool_description='Return a list of suggested US patient advocacy organizations.',
+        tool_description='Return a list of US partner organizations specific to the study indication.',
         tool_schema=SUPPORT_GROUP_TOOL_SCHEMA,
         function_name='suggest_support_groups',
         user=user,
         max_tokens=4096,
     )
     orgs = result.get('orgs') if isinstance(result, dict) else []
-    log.info('AI suggested %d support groups for specialties=%s', len(orgs or []), specialty_tags)
+    log.info(
+        'AI suggested %d orgs for indication=%r org_types=%s',
+        len(orgs or []), study_indication[:80], target_org_types,
+    )
 
     normalized = []
     for org in orgs or []:
@@ -216,21 +261,39 @@ def extract_contacts_from_url(*, url: str, org_name: str, user=None) -> list[dic
 # ──────────────────────── partner-profile suggestion ─────────────────────────
 
 PROFILE_SYSTEM_PROMPT = (
-    "You propose a partner-outreach targeting profile for a clinical trial. "
-    "Given the project's study materials, pick a partner type, therapeutic "
-    "specialties, ICD-10 codes if clearly inferable, a geography scope, and a "
-    "realistic target population size.\n\n"
-    "CRITICAL — specialty_tags must be real CMS NPI Registry taxonomy descriptions, "
-    "not free-text topics. The NPI API will reject generic terms like 'clinical "
-    "research' or 'hematologic malignancies'. Use actual CMS specialty names. "
-    "Examples of valid values: 'Medical Oncology', 'Radiation Oncology', "
-    "'Hematology & Oncology', 'Internal Medicine', 'Family Medicine', 'Pediatrics', "
-    "'Cardiovascular Disease', 'Cardiology', 'Neurology', 'Dermatology', "
-    "'Endocrinology, Diabetes & Metabolism', 'Gastroenterology', 'Nephrology', "
-    "'Pulmonary Disease', 'Rheumatology', 'Psychiatry'. Include 1-3 tags that best "
-    "match the trial's therapeutic area.\n\n"
-    "Prefer broader targeting unless the materials strongly imply a narrow niche. "
-    "Never invent clinical details not supported by the source material."
+    "You are a clinical-trial partner-outreach strategist. You read the uploaded "
+    "study materials closely and propose a targeting profile grounded in what the "
+    "study actually recruits for — not a generic profile for the broader therapeutic "
+    "area. If the study is about HER2+ metastatic breast cancer, you propose orgs, "
+    "specialties, and roles specific to HER2+ metastatic breast cancer — not "
+    "\"all of oncology.\"\n\n"
+    "You return seven things:\n"
+    "1. study_indication — the specific condition the study targets, in one phrase. "
+    "Include stage, biomarker, or line-of-therapy if the materials state it.\n"
+    "2. patient_population_description — 2-4 sentences describing the patients "
+    "(disease stage, key inclusion criteria, age, demographics).\n"
+    "3. target_org_types — 2-5 categories of organizations to reach, ordered from "
+    "most indication-specific to most general. Examples: \"foundations specific "
+    "to [indication]\", \"NCI-designated comprehensive cancer centers\", "
+    "\"academic medical centers with [specialty] programs\", \"community "
+    "oncology networks\", \"patient registries for [indication]\". Be "
+    "indication-specific when possible.\n"
+    "4. target_contact_roles — 3-6 specific titles of people to reach. Examples: "
+    "\"Principal Investigator\", \"Clinical Research Coordinator\", "
+    "\"Director of Clinical Research\", \"Patient Navigator\", \"Director of "
+    "Patient Services\", \"Medical Director\". Pick roles that match the org "
+    "types — clinical roles at medical centers, program roles at advocacy orgs.\n"
+    "5. specialty_tags — 1-3 REAL CMS NPI Registry taxonomy descriptions (the NPI "
+    "API will reject free-text topics like 'clinical research' or 'hematologic "
+    "malignancies'). Valid examples: 'Medical Oncology', 'Radiation Oncology', "
+    "'Hematology & Oncology', 'Cardiology', 'Family Medicine', 'Pediatrics', "
+    "'Neurology', 'Dermatology', 'Endocrinology, Diabetes & Metabolism', "
+    "'Gastroenterology', 'Nephrology', 'Pulmonary Disease', 'Rheumatology', "
+    "'Psychiatry'. If no single CMS taxonomy matches the indication well, pick "
+    "the closest physician specialty.\n"
+    "6. icd10_codes — 1-3 codes inferable from the materials (optional).\n"
+    "7. geography — national unless the materials name specific sites/states.\n\n"
+    "One-sentence rationale ties the profile to what you read in the materials."
 )
 
 PROFILE_TOOL_SCHEMA = {
@@ -240,15 +303,33 @@ PROFILE_TOOL_SCHEMA = {
             'type': 'string',
             'enum': ['clinician', 'support_group', 'research_coordinator', 'investigator'],
         },
+        'study_indication': {
+            'type': 'string',
+            'description': 'The specific condition the study recruits for — one phrase with stage/biomarker/line if stated',
+        },
+        'patient_population_description': {
+            'type': 'string',
+            'description': '2-4 sentences describing the target patients',
+        },
+        'target_org_types': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'description': '2-5 org categories, most indication-specific first',
+        },
+        'target_contact_roles': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'description': '3-6 specific titles to reach at those orgs',
+        },
         'specialty_tags': {
             'type': 'array',
             'items': {'type': 'string'},
-            'description': 'Free-text specialty tags that map to NPI taxonomy descriptions (e.g. "Medical Oncology")',
+            'description': '1-3 real CMS NPI taxonomy descriptions',
         },
         'icd10_codes': {
             'type': 'array',
             'items': {'type': 'string'},
-            'description': 'ICD-10 codes inferable from study materials (optional)',
+            'description': 'ICD-10 codes inferable from materials (optional)',
         },
         'geography': {
             'type': 'object',
@@ -261,34 +342,42 @@ PROFILE_TOOL_SCHEMA = {
             'required': ['type'],
         },
         'target_size': {'type': 'integer', 'description': 'Approximate number of leads to source'},
-        'rationale': {'type': 'string', 'description': 'One short sentence on why this profile'},
+        'rationale': {'type': 'string', 'description': 'One sentence tying the profile to what you read'},
     },
-    'required': ['partner_type', 'specialty_tags', 'geography', 'target_size'],
+    'required': [
+        'partner_type', 'study_indication', 'patient_population_description',
+        'target_org_types', 'target_contact_roles', 'specialty_tags', 'geography', 'target_size',
+    ],
 }
 
 
 def suggest_partner_profile(*, project_name: str, study_code: str, asset_texts: list[str], user=None) -> dict:
-    joined_assets = '\n\n---\n\n'.join(t.strip() for t in asset_texts if t and t.strip()) or '(no assets uploaded)'
+    joined_assets = '\n\n---\n\n'.join(t.strip() for t in asset_texts if t and t.strip()) or '(no assets uploaded — infer conservatively from project name/code only)'
     prompt = (
         f"Project: {project_name}\n"
         f"Study code: {study_code}\n\n"
-        f"Uploaded study materials:\n{joined_assets[:6000]}\n\n"
-        f"Use the return_partner_profile tool to propose a targeting profile."
+        f"Uploaded study materials:\n{joined_assets[:8000]}\n\n"
+        f"Use the return_partner_profile tool. Be specific to this study's indication, "
+        f"not the broader therapeutic area."
     )
     result = AIService.call_structured(
         prompt=prompt,
         system_prompt=PROFILE_SYSTEM_PROMPT,
         tool_name='return_partner_profile',
-        tool_description='Return a partner-outreach targeting profile.',
+        tool_description='Return an indication-specific partner-outreach targeting profile.',
         tool_schema=PROFILE_TOOL_SCHEMA,
         function_name='suggest_partner_profile',
         user=user,
-        max_tokens=1024,
+        max_tokens=2048,
     )
     if not isinstance(result, dict):
         return {}
     return {
         'partner_type': (result.get('partner_type') or '').strip(),
+        'study_indication': (result.get('study_indication') or '').strip(),
+        'patient_population_description': (result.get('patient_population_description') or '').strip(),
+        'target_org_types': [t.strip() for t in (result.get('target_org_types') or []) if t and str(t).strip()],
+        'target_contact_roles': [t.strip() for t in (result.get('target_contact_roles') or []) if t and str(t).strip()],
         'specialty_tags': [t.strip() for t in (result.get('specialty_tags') or []) if t and str(t).strip()],
         'icd10_codes': [c.strip() for c in (result.get('icd10_codes') or []) if c and str(c).strip()],
         'geography': result.get('geography') or {'type': 'national'},

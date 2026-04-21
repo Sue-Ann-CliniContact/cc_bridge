@@ -21,10 +21,26 @@ class PartnerProfileForm(forms.ModelForm):
     """Targeting config per project. Uses comma-separated inputs for list fields
     and a simple 'mode + states' pair for geography, both mapped to/from JSON."""
 
+    target_org_types_csv = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={
+            'class': 'cc-input',
+            'placeholder': 'indication-specific patient advocacy, NCI-designated cancer centers, academic medical centers',
+        }),
+        help_text='Categories of orgs to target (comma-separated)',
+    )
+    target_contact_roles_csv = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={
+            'class': 'cc-input',
+            'placeholder': 'Principal Investigator, Clinical Research Coordinator, Patient Navigator',
+        }),
+        help_text='Specific titles we want to reach (comma-separated)',
+    )
     specialty_tags_csv = forms.CharField(
         required=False,
-        widget=forms.TextInput(attrs={'class': 'cc-input', 'placeholder': 'oncology, hematology, medical oncology'}),
-        help_text='Comma-separated specialty / therapeutic-area tags',
+        widget=forms.TextInput(attrs={'class': 'cc-input', 'placeholder': 'Medical Oncology, Hematology & Oncology'}),
+        help_text='CMS NPI taxonomy names, comma-separated — drives the NPI physician search',
     )
     icd10_codes_csv = forms.CharField(
         required=False,
@@ -58,9 +74,18 @@ class PartnerProfileForm(forms.ModelForm):
 
     class Meta:
         model = PartnerProfile
-        fields = ['partner_type', 'target_size']
+        fields = ['partner_type', 'study_indication', 'patient_population_description', 'target_size']
         widgets = {
             'partner_type': forms.Select(attrs={'class': 'cc-input'}),
+            'study_indication': forms.TextInput(attrs={
+                'class': 'cc-input',
+                'placeholder': 'e.g. metastatic triple-negative breast cancer',
+            }),
+            'patient_population_description': forms.Textarea(attrs={
+                'class': 'cc-input',
+                'rows': 3,
+                'placeholder': 'Who exactly are we recruiting — disease stage, key inclusion criteria, age, demographics?',
+            }),
             'target_size': forms.NumberInput(attrs={'class': 'cc-input', 'placeholder': '100'}),
         }
 
@@ -70,6 +95,8 @@ class PartnerProfileForm(forms.ModelForm):
         if instance:
             self.fields['specialty_tags_csv'].initial = ', '.join(instance.specialty_tags or [])
             self.fields['icd10_codes_csv'].initial = ', '.join(instance.icd10_codes or [])
+            self.fields['target_org_types_csv'].initial = ', '.join(instance.target_org_types or [])
+            self.fields['target_contact_roles_csv'].initial = ', '.join(instance.target_contact_roles or [])
             geo = instance.geography or {}
             self.fields['geography_mode'].initial = geo.get('type', 'national')
             self.fields['geography_states_csv'].initial = ', '.join(geo.get('states') or [])
@@ -83,6 +110,8 @@ class PartnerProfileForm(forms.ModelForm):
         instance = super().save(commit=False)
         instance.specialty_tags = self._split_csv(self.cleaned_data.get('specialty_tags_csv'))
         instance.icd10_codes = self._split_csv(self.cleaned_data.get('icd10_codes_csv'))
+        instance.target_org_types = self._split_csv(self.cleaned_data.get('target_org_types_csv'))
+        instance.target_contact_roles = self._split_csv(self.cleaned_data.get('target_contact_roles_csv'))
 
         mode = self.cleaned_data.get('geography_mode') or 'national'
         geography = {'type': mode}

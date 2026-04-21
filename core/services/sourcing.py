@@ -195,10 +195,28 @@ def source_from_ai(project: Project, *, limit: int = 30, user=None) -> SourcingR
         result.errors.append('Define a Partner Profile before sourcing.')
         return result
 
+    if not profile.study_indication and not profile.target_org_types:
+        result.errors.append(
+            'Add a study_indication (or at least target_org_types) to the partner profile '
+            'for indication-specific org suggestions. Run "Suggest from project info" if unsure.'
+        )
+
+    asset_texts = []
+    for asset in project.assets.all():
+        if asset.content_text:
+            asset_texts.append(
+                f'[{asset.get_type_display()}{": " + asset.subject if asset.subject else ""}]\n{asset.content_text}'
+            )
+
     try:
         suggestions = ai_sourcing.suggest_support_groups(
             specialty_tags=profile.specialty_tags or [],
             geography=profile.geography or {},
+            study_indication=profile.study_indication or '',
+            patient_population_description=profile.patient_population_description or '',
+            target_org_types=profile.target_org_types or [],
+            target_contact_roles=profile.target_contact_roles or [],
+            asset_texts=asset_texts,
             limit=limit,
             user=user,
         )

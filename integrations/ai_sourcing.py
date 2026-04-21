@@ -148,13 +148,21 @@ def suggest_support_groups(
 # ──────────────────────── page-level contact extraction ──────────────────────
 
 CONTACT_EXTRACT_SYSTEM_PROMPT = (
-    "You extract outreach-worthy contacts from a webpage's text. The caller is a "
-    "clinical-trial outreach team trying to find a real person at this organization "
-    "to contact about a partnership. You prefer named individuals over generic "
-    "inboxes (info@, contact@). For each named person you find, return their name, "
-    "title/role, email if on the page, phone if on the page, and a one-line note. "
-    "If the page only has a contact form with no names, return an empty list — "
-    "the team will handle those manually. Do not invent contacts not present in the text."
+    "You extract outreach contacts from one or more pages on an organization's "
+    "website. The caller wants to reach a real person at this org about a "
+    "clinical-trial partnership.\n\n"
+    "Return EVERY named person mentioned on the pages, even if they appear only "
+    "in a single prose sentence. Example: 'Please contact Abbey Hauser, Associate "
+    "Director of Community Engagement, at ahauser@foundation.org' is a named "
+    "contact with email, title, and context — extract it. Don't require a "
+    "formal staff-directory layout. If someone is named, include them.\n\n"
+    "Also ALWAYS return any generic org emails you spot (info@, contact@, "
+    "admin@, press@, etc.) as fallback_emails. These are first-class results — "
+    "an operator can email them to request redirect to the right person. "
+    "Include at least one fallback email if any public email is visible on the "
+    "page.\n\n"
+    "Do NOT invent names or emails. If a page genuinely has no names and no "
+    "emails (just a contact form), return empty arrays for both."
 )
 
 CONTACT_EXTRACT_TOOL_SCHEMA = {
@@ -174,86 +182,160 @@ CONTACT_EXTRACT_TOOL_SCHEMA = {
                 'required': ['name'],
             },
         },
+        'fallback_emails': {
+            'type': 'array',
+            'description': 'Generic org emails (info@, contact@, press@, etc.)',
+            'items': {
+                'type': 'object',
+                'properties': {
+                    'email': {'type': 'string'},
+                    'context': {'type': 'string', 'description': 'What inbox it serves per the page'},
+                },
+                'required': ['email'],
+            },
+        },
     },
-    'required': ['contacts'],
+    'required': ['contacts', 'fallback_emails'],
 }
 
 
-def extract_contacts_from_url(*, url: str, org_name: str, user=None) -> list[dict]:
-    """Fetch a page, strip to text, ask Claude to extract outreach contacts.
-    Returns a possibly-empty list of contact dicts."""
+_BROWSER_HEADERS = {
+    'User-Agent': (
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+        'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+    ),
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Cache-Control': 'no-cache',
+    'Pragma': 'no-cache',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Upgrade-Insecure-Requests': '1',
+}
+
+
+def _candidate_contact_urls(seed_url: str) -> list[str]:
+    """Given a seed URL, return the seed plus common contact/team page paths
+    on the same domain. We use these when the seed alone doesn't yield contacts."""
+    import requests  # noqa: F401 — ensures import at top-level if stripped
+    from urllib.parse import urlparse
+
+    if not seed_url or not seed_url.startswith(('http://', 'https://')):
+        return [seed_url] if seed_url else []
+    parsed = urlparse(seed_url)
+    if not parsed.netloc:
+        return [seed_url]
+    base = f"{parsed.scheme}://{parsed.netloc}"
+    common = [
+        f"{base}/",
+        f"{base}/contact",
+        f"{base}/contact-us",
+        f"{base}/about",
+        f"{base}/about-us",
+        f"{base}/team",
+        f"{base}/our-team",
+        f"{base}/staff",
+        f"{base}/leadership",
+        f"{base}/people",
+    ]
+    ordered = [seed_url] + [u for u in common if u != seed_url]
+    # dedup preserving order
+    seen: set[str] = set()
+    return [u for u in ordered if not (u in seen or seen.add(u))]
+
+
+def _fetch_page_text(url: str, timeout: int = 12) -> tuple[str, int | None]:
+    """Return (text, status_code) for a URL, or ('', status_code) on failure."""
     import requests
     from django.utils.html import strip_tags
 
     try:
-        # Browser-style headers — some sites reject the default requests UA outright.
-        r = requests.get(
-            url,
-            timeout=15,
-            headers={
-                'User-Agent': (
-                    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
-                    'AppleWebKit/537.36 (KHTML, like Gecko) '
-                    'Chrome/122.0.0.0 Safari/537.36'
-                ),
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Cache-Control': 'no-cache',
-                'Pragma': 'no-cache',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Upgrade-Insecure-Requests': '1',
-            },
-            allow_redirects=True,
-        )
-        r.raise_for_status()
-    except requests.HTTPError as exc:
-        status = getattr(exc.response, 'status_code', None)
-        if status in (401, 403, 429):
-            raise RuntimeError(
-                f'{url} blocked the fetch (HTTP {status}). This site rejects crawler requests. '
-                f'Open it manually and add a contact via "Edit lead."'
-            ) from exc
-        raise RuntimeError(f'Could not load page (HTTP {status}): {exc}') from exc
+        r = requests.get(url, timeout=timeout, headers=_BROWSER_HEADERS, allow_redirects=True)
     except Exception as exc:  # noqa: BLE001
-        log.warning('Contact extract: failed to fetch %s: %s', url, exc)
-        raise RuntimeError(f'Could not load page ({exc})') from exc
-
-    # Cap to a sane size before stripping — some pages are huge
+        log.info('scrape %s: %s', url, exc)
+        return '', None
+    if r.status_code >= 400:
+        return '', r.status_code
     raw_html = r.text[:600_000]
     text = strip_tags(raw_html)
-    text = ' '.join(text.split())[:20_000]
+    return ' '.join(text.split()), r.status_code
 
-    if not text.strip():
-        return []
+
+def extract_contacts_from_url(*, url: str, org_name: str, user=None) -> dict:
+    """Fetch the seed URL and up to 4 fallback paths on the same domain,
+    concatenate the text, ask Claude to extract named contacts + fallback emails.
+
+    Returns {contacts: [...], fallback_emails: [...], fetched_urls: [...],
+             failed_urls: [...]}.
+    """
+    seed_fetched, seed_status = _fetch_page_text(url)
+    fetched: list[tuple[str, str]] = []  # (url, text)
+    failed: list[tuple[str, int | None]] = []
+    if seed_fetched.strip():
+        fetched.append((url, seed_fetched))
+    elif seed_status is not None:
+        failed.append((url, seed_status))
+
+    # If we didn't get enough from the seed, try fallback paths on the same domain.
+    total_chars = sum(len(t) for _, t in fetched)
+    if total_chars < 4_000:
+        for candidate in _candidate_contact_urls(url)[1:5]:
+            text, status = _fetch_page_text(candidate)
+            if text.strip():
+                fetched.append((candidate, text))
+            elif status is not None:
+                failed.append((candidate, status))
+            if sum(len(t) for _, t in fetched) >= 60_000:
+                break
+
+    if not fetched:
+        # All URLs failed. Bubble up a clear error.
+        status_summary = ', '.join(f'{u}→{s}' for u, s in failed[:3]) or 'unreachable'
+        raise RuntimeError(
+            f'Could not load any page on the org domain ({status_summary}). '
+            f'Edit the lead with a working URL, or try Web search.'
+        )
+
+    # Concatenate, cap at 80k chars (well under Claude's context).
+    combined_sections = []
+    remaining = 80_000
+    for u, t in fetched:
+        snippet = t[:remaining]
+        combined_sections.append(f'[{u}]\n{snippet}')
+        remaining -= len(snippet)
+        if remaining <= 0:
+            break
+    combined = '\n\n---\n\n'.join(combined_sections)
 
     prompt = (
         f"Organization: {org_name}\n"
-        f"Page URL: {url}\n\n"
-        f"Page text (extracted from HTML):\n---\n{text}\n---\n\n"
-        f"Use the return_contacts tool to return any named contacts suitable for "
-        f"clinical-trial partnership outreach. Return an empty list if the page "
-        f"only has generic email forms or no named people."
+        f"Pages fetched (seed URL first, then common contact/team fallbacks on the same domain):\n\n"
+        f"{combined}\n\n"
+        f"Use return_contacts to return ALL named people found anywhere in this text "
+        f"(including prose mentions like 'contact Abbey Hauser at ...') PLUS every "
+        f"generic email (info@, contact@, press@) as fallback_emails."
     )
     result = AIService.call_structured(
         prompt=prompt,
         system_prompt=CONTACT_EXTRACT_SYSTEM_PROMPT,
         tool_name='return_contacts',
-        tool_description='Return named outreach contacts extracted from the page text.',
+        tool_description='Return named contacts and fallback generic emails from the page text.',
         tool_schema=CONTACT_EXTRACT_TOOL_SCHEMA,
         function_name='extract_contacts_from_url',
         user=user,
-        max_tokens=2048,
+        max_tokens=3000,
     )
-    contacts = result.get('contacts') if isinstance(result, dict) else []
-    normalized = []
-    for c in contacts or []:
+    contacts_raw = result.get('contacts') if isinstance(result, dict) else []
+    fallbacks_raw = result.get('fallback_emails') if isinstance(result, dict) else []
+
+    contacts = []
+    for c in contacts_raw or []:
         if not isinstance(c, dict) or not c.get('name'):
             continue
         name_parts = c.get('name', '').strip().split(' ', 1)
-        normalized.append({
+        contacts.append({
             'first_name': name_parts[0] if name_parts else '',
             'last_name': name_parts[1] if len(name_parts) > 1 else '',
             'role': (c.get('title') or '').strip(),
@@ -261,8 +343,25 @@ def extract_contacts_from_url(*, url: str, org_name: str, user=None) -> list[dic
             'phone': (c.get('phone') or '').strip(),
             'notes': (c.get('notes') or '').strip(),
         })
-    log.info('extract_contacts_from_url: %s → %d contacts', url, len(normalized))
-    return normalized
+    fallbacks = []
+    for fb in fallbacks_raw or []:
+        if not isinstance(fb, dict) or not fb.get('email'):
+            continue
+        fallbacks.append({
+            'email': fb.get('email', '').strip().lower(),
+            'context': (fb.get('context') or '').strip(),
+        })
+
+    log.info(
+        'extract_contacts_from_url: fetched=%d urls, %d contacts, %d fallbacks',
+        len(fetched), len(contacts), len(fallbacks),
+    )
+    return {
+        'contacts': contacts,
+        'fallback_emails': fallbacks,
+        'fetched_urls': [u for u, _ in fetched],
+        'failed_urls': [f'{u} ({s})' for u, s in failed],
+    }
 
 
 # ──────────────────────── partner-profile suggestion ─────────────────────────

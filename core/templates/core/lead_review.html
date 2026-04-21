@@ -142,6 +142,12 @@
               {% if lead.contact_url %}
                 <a href="{{ lead.contact_url }}" target="_blank" rel="noopener" class="ml-1 inline-block text-xs text-cc-royal hover:underline">↗ site</a>
               {% endif %}
+              {% if lead.geography.city or lead.geography.state %}
+                <p class="mt-0.5 text-[11px] text-cc-muted">
+                  📍 {{ lead.geography.city }}{% if lead.geography.city and lead.geography.state %}, {% endif %}{{ lead.geography.state }}
+                  {% if lead.geography.postal_code %} {{ lead.geography.postal_code }}{% endif %}
+                </p>
+              {% endif %}
               {% if lead.geography.suggested_roles %}
                 <p class="mt-0.5 text-[11px] text-cc-muted">Look for: {{ lead.geography.suggested_roles|join:" · " }}</p>
               {% endif %}
@@ -247,11 +253,17 @@ document.querySelectorAll('.enrich-btn').forEach(btn => {
   });
 });
 
+function setBtnStatus(btn, shortText, fullText) {
+  btn.textContent = shortText;
+  btn.setAttribute('title', fullText || shortText);
+}
+
 document.querySelectorAll('.find-contact-btn').forEach(btn => {
   btn.addEventListener('click', async () => {
     const leadId = btn.dataset.leadId;
     btn.disabled = true;
-    btn.textContent = 'Fetching page...';
+    btn.classList.add('max-w-[220px]', 'truncate');
+    btn.textContent = 'Fetching...';
     try {
       const res = await fetch(`/api/leads/${leadId}/find-contact/`, {
         method: 'POST',
@@ -261,18 +273,24 @@ document.querySelectorAll('.find-contact-btn').forEach(btn => {
       const data = await res.json();
       if (data.ok) {
         const n = data.created_count || 0;
+        const named = data.contacts_count || 0;
+        const fb = data.fallback_count || 0;
         if (n > 0) {
-          btn.textContent = `+${n} contact${n === 1 ? '' : 's'}`;
+          const parts = [];
+          if (named) parts.push(`${named} named`);
+          if (fb) parts.push(`${fb} generic`);
+          setBtnStatus(btn, `+${n} (${parts.join(', ')})`, `Created ${n} leads (${parts.join(', ')})`);
           setTimeout(() => window.location.reload(), 900);
+        } else if (named || fb) {
+          setBtnStatus(btn, `Found ${named + fb} (dupes)`, 'All contacts on this page already exist as leads');
         } else {
-          btn.textContent = data.note || 'No named contacts';
+          setBtnStatus(btn, 'None — try Web search', data.note || 'No names or emails on any fetched page');
         }
       } else {
-        btn.textContent = 'Error';
-        alert(data.error || 'Contact extraction failed');
+        setBtnStatus(btn, 'Error', data.error || 'Contact extraction failed');
       }
     } catch (e) {
-      btn.textContent = 'Error';
+      setBtnStatus(btn, 'Error', String(e));
     }
   });
 });

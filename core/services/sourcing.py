@@ -292,16 +292,18 @@ def source_from_ai(project: Project, *, limit: int = 30, user=None) -> SourcingR
 
 @transaction.atomic
 def find_contact_from_org_page(org_lead: Lead, *, user=None) -> dict:
-    """Fetch the org's contact_url, ask Claude to extract named contacts, and
-    persist each as a new Lead. If an existing Lead matches by email, dedup as usual.
+    """Fetch the org's contact_url (plus common fallback paths on the same
+    domain), ask Claude to extract both named contacts AND generic emails, and
+    persist each as a new Lead.
 
-    Returns a summary the UI can render: {created_count, contacts: [{name, email, ...}]}.
+    Returns a summary dict with both counts so the UI can distinguish
+    "named contacts" vs "just a generic inbox."
     """
     if not org_lead.contact_url:
-        return {'ok': False, 'error': 'This lead has no contact URL.'}
+        return {'ok': False, 'error': 'This lead has no contact URL — edit the lead and add one.'}
 
     try:
-        contacts = ai_sourcing.extract_contacts_from_url(
+        payload = ai_sourcing.extract_contacts_from_url(
             url=org_lead.contact_url,
             org_name=org_lead.organization,
             user=user,
@@ -309,20 +311,25 @@ def find_contact_from_org_page(org_lead: Lead, *, user=None) -> dict:
     except Exception as exc:  # noqa: BLE001
         return {'ok': False, 'error': str(exc)}
 
-    if not contacts:
+    contacts = payload.get('contacts') or []
+    fallbacks = payload.get('fallback_emails') or []
+    fetched_urls = payload.get('fetched_urls') or []
+
+    if not contacts and not fallbacks:
         return {
             'ok': True,
             'created_count': 0,
-            'contacts': [],
-            'note': 'Page has no named contacts (only generic forms) — try a staff / about page.',
+            'contacts_count': 0,
+            'fallback_count': 0,
+            'fetched_urls': fetched_urls,
+            'note': 'No names or emails found on this domain. Try "Web search" or edit the URL.',
         }
 
-    opted_out = set(OptOut.objects.filter(
-        email__in=[c['email'] for c in contacts if c.get('email')]
-    ).values_list('email', flat=True))
+    all_emails = [c.get('email') for c in contacts if c.get('email')] + [f['email'] for f in fallbacks]
+    opted_out = set(OptOut.objects.filter(email__in=all_emails).values_list('email', flat=True))
 
     created_pks = []
-    preview = []
+    # Named contacts
     for c in contacts:
         email = c.get('email')
         if email and email in opted_out:
@@ -344,13 +351,35 @@ def find_contact_from_org_page(org_lead: Lead, *, user=None) -> dict:
         )
         if created:
             created_pks.append(lead.pk)
-        preview.append({
-            'lead_id': lead.pk,
-            'name': f"{lead.first_name} {lead.last_name}".strip(),
-            'role': lead.role,
-            'email': lead.email or '',
-        })
-    return {'ok': True, 'created_count': len(created_pks), 'contacts': preview}
+
+    # Fallback generic emails — separate Lead rows, marked as admin inbox
+    for fb in fallbacks:
+        if fb['email'] in opted_out:
+            continue
+        lead, created, _ = _persist_candidate(
+            {
+                'first_name': '',
+                'last_name': '',
+                'role': f'General inquiries ({fb.get("context") or "admin inbox"})',
+                'email': fb['email'],
+                'organization': org_lead.organization,
+                'specialty': org_lead.specialty,
+                'contact_url': org_lead.contact_url,
+                'geography': {'notes': 'Generic admin/info email — use to request redirect to the right contact'},
+            },
+            default_source=Lead.SOURCE_AI_SUGGESTED,
+            default_enrichment=Lead.ENRICHMENT_COMPLETE,
+        )
+        if created:
+            created_pks.append(lead.pk)
+
+    return {
+        'ok': True,
+        'created_count': len(created_pks),
+        'contacts_count': len(contacts),
+        'fallback_count': len(fallbacks),
+        'fetched_urls': fetched_urls,
+    }
 
 
 @transaction.atomic

@@ -31,6 +31,35 @@
   </div>
 {% endif %}
 
+{% if lead.geography %}
+  <div class="surface-card mt-6 p-6 max-w-3xl">
+    <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Source data (read-only)</h2>
+    <p class="mt-1 text-xs text-cc-muted">Captured from {{ lead.get_source_display }}. Useful context but not part of the editable profile.</p>
+    <dl class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1 text-sm">
+      {% if lead.geography.street %}<div><dt class="inline text-cc-muted">Address:</dt> <dd class="inline text-cc-ink">{{ lead.geography.street }}{% if lead.geography.address_2 %}, {{ lead.geography.address_2 }}{% endif %}</dd></div>{% endif %}
+      {% if lead.geography.city or lead.geography.state %}<div><dt class="inline text-cc-muted">City/State:</dt> <dd class="inline text-cc-ink">{{ lead.geography.city }}{% if lead.geography.city and lead.geography.state %}, {% endif %}{{ lead.geography.state }} {{ lead.geography.postal_code }}</dd></div>{% endif %}
+      {% if lead.geography.practice_telephone %}<div><dt class="inline text-cc-muted">Practice phone:</dt> <dd class="inline text-cc-ink">{{ lead.geography.practice_telephone }}</dd></div>{% endif %}
+      {% if lead.geography.fax %}<div><dt class="inline text-cc-muted">Fax:</dt> <dd class="inline text-cc-ink">{{ lead.geography.fax }}</dd></div>{% endif %}
+      {% if lead.geography.gender %}<div><dt class="inline text-cc-muted">Gender:</dt> <dd class="inline text-cc-ink">{{ lead.geography.gender }}</dd></div>{% endif %}
+      {% if lead.geography.taxonomy_license_state %}<div><dt class="inline text-cc-muted">License state:</dt> <dd class="inline text-cc-ink">{{ lead.geography.taxonomy_license_state }}</dd></div>{% endif %}
+      {% if lead.geography.taxonomy_license %}<div><dt class="inline text-cc-muted">License #:</dt> <dd class="inline text-cc-ink">{{ lead.geography.taxonomy_license }}</dd></div>{% endif %}
+      {% if lead.geography.enumeration_date %}<div><dt class="inline text-cc-muted">NPI issued:</dt> <dd class="inline text-cc-ink">{{ lead.geography.enumeration_date }}</dd></div>{% endif %}
+      {% if lead.geography.last_updated %}<div><dt class="inline text-cc-muted">NPI updated:</dt> <dd class="inline text-cc-ink">{{ lead.geography.last_updated }}</dd></div>{% endif %}
+      {% if lead.geography.notes %}<div class="md:col-span-2"><dt class="inline text-cc-muted">Notes:</dt> <dd class="inline text-cc-ink">{{ lead.geography.notes }}</dd></div>{% endif %}
+    </dl>
+    {% if lead.geography.all_taxonomies %}
+      <div class="mt-3 pt-3 border-t border-slate-100 text-xs">
+        <p class="font-semibold text-cc-muted">All taxonomies:</p>
+        <ul class="mt-1 space-y-0.5 text-cc-muted">
+          {% for t in lead.geography.all_taxonomies %}
+            <li>{% if t.primary %}<span class="font-semibold text-cc-ink">★</span> {% endif %}{{ t.desc }} ({{ t.code }}){% if t.state %} · licensed {{ t.state }}{% endif %}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+  </div>
+{% endif %}
+
 <form method="post" class="surface-card mt-6 p-8 max-w-3xl space-y-5">
   {% csrf_token %}
   <div class="grid gap-4 md:grid-cols-2">

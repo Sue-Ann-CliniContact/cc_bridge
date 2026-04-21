@@ -132,6 +132,7 @@ def _persist_candidate(candidate: dict, default_source: str, default_enrichment:
         role=candidate.get('role', ''),
         specialty=candidate.get('specialty', ''),
         contact_url=(candidate.get('contact_url') or '').strip(),
+        linkedin_url=(candidate.get('linkedin_url') or '').strip(),
         geography=candidate.get('geography', {}) or {},
         source=default_source,
         enrichment_status=default_enrichment,
@@ -503,6 +504,7 @@ def find_org_contacts_via_web(org_lead: Lead, *, user=None) -> dict:
             'organization': org_lead.organization,
             'specialty': org_lead.specialty,
             'contact_url': src or org_lead.contact_url,
+            'linkedin_url': c.get('linkedin_url', ''),
             'geography': {'notes': c.get('notes', '')},
         }
         lead, created, _ = _persist_candidate(
@@ -583,6 +585,9 @@ def enrich_clinician_via_web(lead: Lead, *, user=None) -> dict:
     if result['source_url'] and not lead.contact_url:
         lead.contact_url = result['source_url']
         update_fields.add('contact_url')
+    if result.get('linkedin_url') and not lead.linkedin_url:
+        lead.linkedin_url = result['linkedin_url']
+        update_fields.add('linkedin_url')
 
     lead.enrichment_status = Lead.ENRICHMENT_COMPLETE if lead.email else Lead.ENRICHMENT_FAILED
     update_fields.add('enrichment_status')
@@ -627,6 +632,9 @@ def enrich_lead_with_apollo(lead: Lead, *, user=None) -> dict:
     if match.get('title') and not lead.role:
         lead.role = match['title']
         updated_fields.append('role')
+    if match.get('linkedin_url') and not lead.linkedin_url:
+        lead.linkedin_url = match['linkedin_url']
+        updated_fields.append('linkedin_url')
 
     lead.enrichment_status = Lead.ENRICHMENT_COMPLETE if lead.email else Lead.ENRICHMENT_FAILED
     lead.save(update_fields=list(set(updated_fields)))

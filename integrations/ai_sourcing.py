@@ -508,7 +508,9 @@ ORG_CONTACTS_WEB_SYSTEM_PROMPT = (
     "  5. '{org_name} medical director' OR '{org_name} clinical research'\n"
     "  6. '{org_name} about us' OR '{org_name} team'\n"
     "  7. '{org_name} press release' (to catch named people quoted in news)\n"
-    "Try LinkedIn-hosted results too — they often surface current leadership.\n\n"
+    "  8. 'site:linkedin.com/in {org_name}' — LinkedIn profiles are THE best "
+    "signal for current titles and current employment. Always run at least one "
+    "LinkedIn search. Capture the linkedin_url for every contact you find.\n\n"
     "For every named person you return, include a source_url that is a real, "
     "current page (not a 404). Prefer URLs on the org's own domain or a major "
     "verified directory. Never invent names or emails. If a name is on a press "
@@ -533,7 +535,8 @@ ORG_CONTACTS_WEB_TOOL_SCHEMA = {
                     'name': {'type': 'string'},
                     'title': {'type': 'string'},
                     'email': {'type': 'string', 'description': 'Email if publicly listed — otherwise empty'},
-                    'source_url': {'type': 'string', 'description': "URL where the person's name was verified"},
+                    'linkedin_url': {'type': 'string', 'description': "LinkedIn profile URL if found (e.g. https://www.linkedin.com/in/...)"},
+                    'source_url': {'type': 'string', 'description': "URL where the person's name/role was verified"},
                     'notes': {'type': 'string', 'description': 'One-line context'},
                 },
                 'required': ['name'],
@@ -602,6 +605,7 @@ def find_org_contacts_via_web(
             'last_name': name_parts[1] if len(name_parts) > 1 else '',
             'role': (c.get('title') or '').strip(),
             'email': (c.get('email') or '').strip().lower() or None,
+            'linkedin_url': (c.get('linkedin_url') or '').strip(),
             'source_url': (c.get('source_url') or '').strip(),
             'notes': (c.get('notes') or '').strip(),
         })
@@ -627,14 +631,18 @@ CLINICIAN_EMAIL_WEB_SYSTEM_PROMPT = (
     "You find the professional work email for a specific US-licensed clinician "
     "using the web_search tool. Search hospital / health-system / academic "
     "faculty / practice directories for the clinician's profile, then extract "
-    "their verified email.\n\n"
+    "their verified email. Also search LinkedIn (site:linkedin.com/in) to "
+    "confirm their current affiliation and capture the profile URL — LinkedIn "
+    "profiles are very reliable for 'where do they work now.'\n\n"
     "Do NOT guess emails from patterns (firstname.lastname@domain). Only return "
     "an email if it is explicitly posted on the clinician's institution website "
     "or a reputable professional directory (AMA, Doximity profile, medical-"
     "school faculty page). Empty email is better than wrong email.\n\n"
     "If no email is publicly posted, return empty email but include the most "
     "likely source_url where an operator could find contact info manually (e.g. "
-    "the clinician's institution profile page, or the department contact page)."
+    "the clinician's institution profile page, or the department contact page). "
+    "Always include linkedin_url when you find a matching LinkedIn profile — "
+    "that alone is high-value even without an email."
 )
 
 CLINICIAN_EMAIL_WEB_TOOL_SCHEMA = {
@@ -643,6 +651,7 @@ CLINICIAN_EMAIL_WEB_TOOL_SCHEMA = {
         'email': {'type': 'string', 'description': 'Verified work email or empty'},
         'affiliation': {'type': 'string', 'description': 'Hospital/practice/institution name'},
         'role': {'type': 'string', 'description': 'Title at that affiliation'},
+        'linkedin_url': {'type': 'string', 'description': 'LinkedIn profile URL if found (confirms current affiliation)'},
         'source_url': {'type': 'string', 'description': 'Where you found this info'},
         'confidence': {'type': 'string', 'enum': ['high', 'medium', 'low', 'not_found']},
         'notes': {'type': 'string'},
@@ -686,6 +695,7 @@ def find_clinician_email_via_web(
         'email': (result.get('email') or '').strip().lower(),
         'affiliation': (result.get('affiliation') or '').strip(),
         'role': (result.get('role') or '').strip(),
+        'linkedin_url': (result.get('linkedin_url') or '').strip(),
         'source_url': (result.get('source_url') or '').strip(),
         'confidence': (result.get('confidence') or 'not_found').strip(),
         'notes': (result.get('notes') or '').strip(),

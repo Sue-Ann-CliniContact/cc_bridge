@@ -150,6 +150,9 @@
               {% if lead.contact_url %}
                 <a href="{{ lead.contact_url }}" target="_blank" rel="noopener" class="ml-1 inline-block text-xs text-cc-royal hover:underline">↗ site</a>
               {% endif %}
+              {% if lead.linkedin_url %}
+                <a href="{{ lead.linkedin_url }}" target="_blank" rel="noopener" class="ml-1 inline-block text-xs text-cc-royal hover:underline">↗ LinkedIn</a>
+              {% endif %}
               {% if lead.geography.suggested_roles %}
                 <p class="mt-0.5 text-[11px] text-cc-muted">Look for: {{ lead.geography.suggested_roles|join:" · " }}</p>
               {% endif %}

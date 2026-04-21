@@ -397,18 +397,29 @@ def suggest_partner_profile(*, project_name: str, study_code: str, asset_texts: 
 
 ORG_CONTACTS_WEB_SYSTEM_PROMPT = (
     "You research a single US organization and return real, verifiable staff "
-    "contacts suitable for clinical-trial partnership outreach. You use the "
-    "web_search tool to find the org's staff directory, leadership page, or "
-    "press releases. Do NOT invent names or emails. Prefer named contacts "
-    "from pages on the org's own domain or verified directories.\n\n"
-    "For each named person you find, return name + title + email (if publicly "
-    "posted) + the source URL where you verified the person's existence.\n\n"
-    "Also return 1-2 generic org emails (info@, contact@, admin@, "
-    "info@foundation.org, etc.) as 'fallback_emails' — these are not ideal but "
-    "they work as a way to ask the org to forward to the right person.\n\n"
-    "If no named staff can be found on the open web, return an empty contacts "
-    "list but still include the fallback generic emails. Always include at "
-    "least one fallback if the org has any public email at all."
+    "contacts suitable for clinical-trial partnership outreach. Use web_search "
+    "aggressively — you have 10 searches available and you should use most of "
+    "them before giving up.\n\n"
+    "Search strategy (run at least 4 of these before concluding no one is "
+    "findable):\n"
+    "  1. '{org_name} staff' or '{org_name} leadership'\n"
+    "  2. '{org_name} executive director'\n"
+    "  3. '{org_name} director of patient services'\n"
+    "  4. '{org_name} board of directors'\n"
+    "  5. '{org_name} medical director' OR '{org_name} clinical research'\n"
+    "  6. '{org_name} about us' OR '{org_name} team'\n"
+    "  7. '{org_name} press release' (to catch named people quoted in news)\n"
+    "Try LinkedIn-hosted results too — they often surface current leadership.\n\n"
+    "For every named person you return, include a source_url that is a real, "
+    "current page (not a 404). Prefer URLs on the org's own domain or a major "
+    "verified directory. Never invent names or emails. If a name is on a press "
+    "page but no email is listed, return the name + source_url with empty email.\n\n"
+    "ALWAYS include at least one fallback generic email (info@, contact@, "
+    "admin@, etc.) if the org has any public email at all. Fallback emails are "
+    "first-class results — the outreach team uses them to request a redirect "
+    "to the right person. Include a source_url for each fallback too.\n\n"
+    "If after thorough searching you truly find no named contact, return empty "
+    "contacts but populate fallback_emails with every generic email you spotted."
 )
 
 ORG_CONTACTS_WEB_TOOL_SCHEMA = {
@@ -479,7 +490,7 @@ def find_org_contacts_via_web(
         function_name='find_org_contacts_via_web',
         user=user,
         max_tokens=4096,
-        max_web_searches=5,
+        max_web_searches=10,
     )
 
     contacts = []

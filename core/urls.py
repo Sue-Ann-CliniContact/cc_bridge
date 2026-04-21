@@ -25,6 +25,7 @@ urlpatterns = [
     path('api/leads/<int:lead_id>/web-contacts/', views.web_find_org_contacts, name='web_find_org_contacts'),
     path('api/leads/<int:lead_id>/web-enrich/', views.web_enrich_clinician, name='web_enrich_clinician'),
     path('tools/cleanup-non-monday-leads/', views.cleanup_non_monday_leads_view, name='cleanup_non_monday_leads'),
+    path('tools/validate-contact-urls/', views.validate_contact_urls_view, name='validate_contact_urls'),
 
     # Campaigns (Phase 3)
     path('projects/<int:project_id>/campaigns/new/', views.campaign_create, name='campaign_create'),

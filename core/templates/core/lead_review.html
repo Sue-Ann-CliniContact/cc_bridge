@@ -129,7 +129,13 @@
             </td>
             <td class="px-4 py-3 font-medium text-cc-ink">
               {{ lead.first_name }} {{ lead.last_name }}
-              {% if not lead.first_name and not lead.last_name %}<span class="text-cc-muted">(org only)</span>{% endif %}
+              {% if not lead.first_name and not lead.last_name %}
+                {% if lead.source == 'ai_suggested' and lead.email %}
+                  <span class="cc-chip warn text-[10px]">Generic admin</span>
+                {% else %}
+                  <span class="text-cc-muted">(org only)</span>
+                {% endif %}
+              {% endif %}
             </td>
             <td class="px-4 py-3 text-cc-ink">
               {{ lead.organization|default:"—" }}
@@ -275,7 +281,7 @@ document.querySelectorAll('.web-orgs-btn').forEach(btn => {
   btn.addEventListener('click', async () => {
     const leadId = btn.dataset.leadId;
     btn.disabled = true;
-    btn.textContent = 'Web searching... (30–60s)';
+    btn.textContent = 'Searching web... (30–90s)';
     try {
       const res = await fetch(`/api/leads/${leadId}/web-contacts/`, {
         method: 'POST',
@@ -285,11 +291,22 @@ document.querySelectorAll('.web-orgs-btn').forEach(btn => {
       const data = await res.json();
       if (data.ok) {
         const n = data.created_count || 0;
-        const parts = [];
-        if (data.contacts_count) parts.push(`${data.contacts_count} named`);
-        if (data.fallback_count) parts.push(`${data.fallback_count} fallback`);
-        btn.textContent = n ? `+${n} (${parts.join(', ')})` : (parts.length ? parts.join(', ') + ' (dup)' : 'nothing found');
-        if (n > 0) setTimeout(() => window.location.reload(), 1200);
+        const named = data.contacts_count || 0;
+        const fallback = data.fallback_count || 0;
+        const broken = data.broken_urls_dropped || 0;
+        if (n > 0) {
+          const parts = [];
+          if (named) parts.push(`${named} named`);
+          if (fallback) parts.push(`${fallback} generic`);
+          btn.textContent = `+${n} lead${n === 1 ? '' : 's'} (${parts.join(', ')})`;
+          setTimeout(() => window.location.reload(), 1200);
+        } else if (named || fallback) {
+          btn.textContent = `Found ${named + fallback} (all duplicates)`;
+        } else if (broken) {
+          btn.textContent = `${broken} URLs failed validation — nothing to save`;
+        } else {
+          btn.textContent = 'Claude found no contacts';
+        }
       } else {
         btn.textContent = 'Error';
         alert(data.error || 'Web search failed');

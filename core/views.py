@@ -576,6 +576,24 @@ def webhook_instantly(request):
 
 
 @login_required
+def validate_contact_urls_view(request):
+    """HEAD-check every Lead.contact_url and clear broken ones."""
+    qs = Lead.objects.exclude(contact_url='').only('id', 'contact_url')
+    total = qs.count()
+
+    if request.method == 'POST' and request.POST.get('confirm') == 'VALIDATE-CONTACT-URLS':
+        pairs = list(qs.values_list('id', 'contact_url'))
+        urls = [u for (_id, u) in pairs]
+        result_map = sourcing.validate_urls(urls, timeout=5.0, max_workers=20)
+        broken_ids = [lid for (lid, url) in pairs if not result_map.get(url, False)]
+        updated = Lead.objects.filter(pk__in=broken_ids).update(contact_url='')
+        messages.success(request, f'Checked {total} URLs — cleared {updated} broken ones.')
+        return redirect('dashboard')
+
+    return render(request, 'core/validate_urls.html', {'total': total})
+
+
+@login_required
 def cleanup_non_monday_leads_view(request):
     """Browser-accessible version of the cleanup management command — used when
     the Render Shell is unresponsive. GET shows the preview; POST with a

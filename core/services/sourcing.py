@@ -8,12 +8,53 @@ in a separate step after human review.
 """
 from __future__ import annotations
 
+import logging
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
+import requests
 from django.db import transaction
 
 from core.models import Lead, OptOut, PartnerProfile, Project
 from integrations import ai_sourcing, apollo, monday_client, npi
+
+log = logging.getLogger(__name__)
+
+
+# ──────────────────────── URL validation ────────────────────────────────────
+
+def _head_check(url: str, timeout: float = 4.0) -> bool:
+    """Return True iff the URL resolves with a 2xx/3xx response."""
+    if not url or not url.startswith(('http://', 'https://')):
+        return False
+    headers = {
+        'User-Agent': (
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+            'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+        ),
+    }
+    try:
+        r = requests.head(url, timeout=timeout, allow_redirects=True, headers=headers)
+        if 200 <= r.status_code < 400:
+            return True
+        # Some sites reject HEAD but answer GET. Retry with GET, streamed.
+        if r.status_code in (400, 403, 405, 501):
+            r2 = requests.get(url, timeout=timeout, allow_redirects=True, headers=headers, stream=True)
+            r2.close()
+            return 200 <= r2.status_code < 400
+        return False
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def validate_urls(urls: list[str], timeout: float = 4.0, max_workers: int = 10) -> dict[str, bool]:
+    """Parallel HEAD-check a list of URLs. Returns {url: is_valid}."""
+    unique = list({u for u in urls if u})
+    if not unique:
+        return {}
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        results = list(ex.map(lambda u: _head_check(u, timeout=timeout), unique))
+    return dict(zip(unique, results))
 
 
 @dataclass
@@ -383,8 +424,16 @@ def import_from_monday_board(
 def find_org_contacts_via_web(org_lead: Lead, *, user=None) -> dict:
     """Use Claude + web_search to find contacts for an advocacy/support-group org.
     Persists named contacts AND generic admin emails (info@, contact@) as Leads.
+    Validates every source_url before saving — never keep a 404 link.
+    If the incoming org_lead's own contact_url is broken, it is cleared too.
     """
     target_roles = (org_lead.geography or {}).get('suggested_roles') or []
+
+    # First: if the org_lead's existing contact_url is broken, clear it up front.
+    if org_lead.contact_url and not _head_check(org_lead.contact_url):
+        org_lead.contact_url = ''
+        org_lead.save(update_fields=['contact_url', 'updated_at'])
+
     try:
         result = ai_sourcing.find_org_contacts_via_web(
             org_name=org_lead.organization,
@@ -398,15 +447,25 @@ def find_org_contacts_via_web(org_lead: Lead, *, user=None) -> dict:
     contacts = result.get('contacts') or []
     fallbacks = result.get('fallback_emails') or []
 
+    # Validate every source URL returned by Claude (HEAD-check in parallel).
+    all_source_urls = [c.get('source_url') for c in contacts if c.get('source_url')]
+    all_source_urls += [f.get('source_url') for f in fallbacks if f.get('source_url')]
+    url_ok = validate_urls(all_source_urls)
+
     all_emails = [c.get('email') for c in contacts if c.get('email')] + [f['email'] for f in fallbacks]
     opted_out = set(OptOut.objects.filter(email__in=all_emails).values_list('email', flat=True))
 
     created_pks = []
+    broken_url_count = 0
     # Named contacts
     for c in contacts:
         email = c.get('email')
         if email and email in opted_out:
             continue
+        src = (c.get('source_url') or '').strip()
+        if src and not url_ok.get(src, False):
+            broken_url_count += 1
+            src = ''  # keep the contact but drop the broken URL
         candidate = {
             'first_name': c['first_name'],
             'last_name': c['last_name'],
@@ -414,7 +473,7 @@ def find_org_contacts_via_web(org_lead: Lead, *, user=None) -> dict:
             'email': email,
             'organization': org_lead.organization,
             'specialty': org_lead.specialty,
-            'contact_url': c.get('source_url') or org_lead.contact_url,
+            'contact_url': src or org_lead.contact_url,
             'geography': {'notes': c.get('notes', '')},
         }
         lead, created, _ = _persist_candidate(
@@ -428,6 +487,10 @@ def find_org_contacts_via_web(org_lead: Lead, *, user=None) -> dict:
     for fb in fallbacks:
         if fb['email'] in opted_out:
             continue
+        src = (fb.get('source_url') or '').strip()
+        if src and not url_ok.get(src, False):
+            broken_url_count += 1
+            src = ''
         candidate = {
             'first_name': '',
             'last_name': '',
@@ -435,7 +498,7 @@ def find_org_contacts_via_web(org_lead: Lead, *, user=None) -> dict:
             'email': fb['email'],
             'organization': org_lead.organization,
             'specialty': org_lead.specialty,
-            'contact_url': fb.get('source_url') or org_lead.contact_url,
+            'contact_url': src or org_lead.contact_url,
             'geography': {'notes': 'Generic admin/info email — use to request redirect to the right contact'},
         }
         lead, created, _ = _persist_candidate(
@@ -451,6 +514,7 @@ def find_org_contacts_via_web(org_lead: Lead, *, user=None) -> dict:
         'created_count': len(created_pks),
         'contacts_count': len(contacts),
         'fallback_count': len(fallbacks),
+        'broken_urls_dropped': broken_url_count,
     }
 
 

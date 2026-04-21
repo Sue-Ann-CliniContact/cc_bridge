@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Import leads · {{ project.study_code }}{% endblock %}
+
+{% block content %}
+<a href="{% url 'lead_review' project.pk %}" class="text-sm text-cc-muted hover:text-cc-royal">← Back to leads</a>
+
+<h1 class="mt-3 text-3xl font-black tracking-tight text-cc-ink">Import leads from CSV</h1>
+<p class="mt-2 text-sm text-cc-muted">
+  Rows are added to the global leads DB (deduped by email + NPI) and respect the opt-out table.
+  Expected columns (any subset): <code>first_name, last_name, email, phone, npi, organization, role, specialty</code>.
+  First row should be the header.
+</p>
+
+{% if messages %}
+  <div class="mt-4 space-y-2">
+    {% for msg in messages %}
+      <div class="rounded-xl px-4 py-3 text-sm
+        {% if msg.level_tag == 'success' %}bg-emerald-50 text-emerald-700{% elif msg.level_tag == 'error' %}bg-red-50 text-red-700{% else %}bg-slate-100 text-slate-700{% endif %}">
+        {{ msg }}
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}
+
+<form method="post" enctype="multipart/form-data" class="surface-card mt-6 p-8 max-w-2xl space-y-6">
+  {% csrf_token %}
+  <div>
+    <label class="cc-label">CSV file (UTF-8)</label>
+    <input type="file" name="file" accept=".csv,text/csv" required
+           class="cc-input file:mr-4 file:rounded-lg file:border-0 file:bg-cc-royal file:px-4 file:py-2 file:text-white file:text-xs file:font-bold">
+  </div>
+  <div class="flex justify-end gap-3 pt-4 border-t border-slate-100">
+    <a href="{% url 'lead_review' project.pk %}" class="cc-btn cc-btn-ghost">Cancel</a>
+    <button type="submit" class="cc-btn cc-btn-primary">Import</button>
+  </div>
+</form>
+{% endblock %}

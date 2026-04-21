@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Partner profile · {{ project.study_code }}{% endblock %}
+
+{% block content %}
+<a href="{% url 'project_detail' project.pk %}" class="text-sm text-cc-muted hover:text-cc-royal">← Back to {{ project.study_code }}</a>
+
+<h1 class="mt-3 text-3xl font-black tracking-tight text-cc-ink">Partner profile</h1>
+<p class="mt-2 text-sm text-cc-muted">
+  Who should this project reach out to? These criteria drive lead sourcing from NPI, Apollo, and AI-suggested directories.
+</p>
+
+<form method="post" class="surface-card mt-8 p-8 space-y-6 max-w-3xl">
+  {% csrf_token %}
+
+  <div class="grid gap-4 md:grid-cols-2">
+    <div>
+      <label class="cc-label">Partner type</label>
+      {{ form.partner_type }}
+    </div>
+    <div>
+      <label class="cc-label">Target size</label>
+      {{ form.target_size }}
+      <p class="mt-1 text-xs text-cc-muted">{{ form.target_size.help_text|default:"Approx. number of leads to source" }}</p>
+    </div>
+  </div>
+
+  <div>
+    <label class="cc-label">Specialty tags</label>
+    {{ form.specialty_tags_csv }}
+    <p class="mt-1 text-xs text-cc-muted">{{ form.specialty_tags_csv.help_text }}</p>
+  </div>
+
+  <div>
+    <label class="cc-label">ICD-10 codes</label>
+    {{ form.icd10_codes_csv }}
+    <p class="mt-1 text-xs text-cc-muted">{{ form.icd10_codes_csv.help_text }}</p>
+  </div>
+
+  <div class="pt-4 border-t border-slate-100">
+    <label class="cc-label">Geography</label>
+    {{ form.geography_mode }}
+    <div class="grid gap-4 md:grid-cols-2 mt-3">
+      <div>
+        <label class="cc-label">States (if "Specific states")</label>
+        {{ form.geography_states_csv }}
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="cc-label">ZIP</label>
+          {{ form.geography_zip }}
+        </div>
+        <div>
+          <label class="cc-label">Radius (mi)</label>
+          {{ form.geography_radius_miles }}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="flex justify-end gap-3 pt-4 border-t border-slate-100">
+    <a href="{% url 'project_detail' project.pk %}" class="cc-btn cc-btn-ghost">Cancel</a>
+    <button type="submit" class="cc-btn cc-btn-primary">Save profile</button>
+  </div>
+</form>
+{% endblock %}

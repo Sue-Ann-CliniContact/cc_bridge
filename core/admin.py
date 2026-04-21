@@ -1,6 +1,7 @@
 from django.contrib import admin
 
 from .models import (
+    ApolloCreditLog,
     AuditLog,
     Campaign,
     Lead,
@@ -11,6 +12,14 @@ from .models import (
     ProjectLead,
     StudyAsset,
 )
+
+
+@admin.register(ApolloCreditLog)
+class ApolloCreditLogAdmin(admin.ModelAdmin):
+    list_display = ('created_at', 'endpoint', 'credits', 'user', 'notes')
+    list_filter = ('endpoint',)
+    date_hierarchy = 'created_at'
+    readonly_fields = ('created_at',)
 
 
 @admin.register(Project)

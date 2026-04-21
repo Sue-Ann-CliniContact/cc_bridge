@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% block title %}Leads · {{ project.study_code }}{% endblock %}
+
+{% block content %}
+<a href="{% url 'project_detail' project.pk %}" class="text-sm text-cc-muted hover:text-cc-royal">← Back to {{ project.study_code }}</a>
+
+<div class="mt-3 flex items-start justify-between gap-6">
+  <div>
+    <h1 class="text-3xl font-black tracking-tight text-cc-ink">Lead review</h1>
+    <p class="mt-1 text-sm text-cc-muted">
+      Global leads DB across all projects. Select rows and add them to <strong>{{ project.study_code }}</strong>.
+    </p>
+  </div>
+  {% if apollo_configured %}
+    <div class="text-right text-xs text-cc-muted shrink-0">
+      <p class="font-bold uppercase tracking-wider">Apollo budget</p>
+      <p class="mt-1">{{ apollo_remaining }} credits left this month</p>
+    </div>
+  {% endif %}
+</div>
+
+{% if messages %}
+  <div class="mt-4 space-y-2">
+    {% for msg in messages %}
+      <div class="rounded-xl px-4 py-3 text-sm
+        {% if msg.level_tag == 'success' %}bg-emerald-50 text-emerald-700{% elif msg.level_tag == 'warning' %}bg-amber-50 text-amber-800{% else %}bg-slate-100 text-slate-700{% endif %}">
+        {{ msg }}
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}
+
+<!-- Sourcing bar -->
+<div class="surface-card mt-6 p-5">
+  <div class="flex flex-wrap items-center gap-3">
+    {% if profile %}
+      <span class="cc-chip muted">
+        {{ profile.get_partner_type_display }} · target {{ profile.target_size }}
+      </span>
+      <span class="text-xs text-cc-muted">
+        Specialties: {{ profile.specialty_tags|join:", "|default:"—" }}
+      </span>
+    {% else %}
+      <span class="cc-chip warn">No partner profile yet</span>
+      <a href="{% url 'partner_profile_edit' project.pk %}" class="text-sm text-cc-royal hover:underline">Define targeting first →</a>
+    {% endif %}
+    <div class="ml-auto flex flex-wrap gap-2">
+      {% if profile %}
+        <form method="post" action="{% url 'source_leads_npi' project.pk %}">{% csrf_token %}
+          <input type="hidden" name="limit" value="100">
+          <button class="cc-btn cc-btn-ghost">Source from NPI</button>
+        </form>
+        <form method="post" action="{% url 'source_leads_ai' project.pk %}">{% csrf_token %}
+          <input type="hidden" name="limit" value="30">
+          <button class="cc-btn cc-btn-ghost">Suggest with AI</button>
+        </form>
+      {% endif %}
+      <a href="{% url 'lead_import_csv' project.pk %}" class="cc-btn cc-btn-ghost">Import CSV</a>
+    </div>
+  </div>
+</div>
+
+<!-- Filters -->
+<form method="get" class="mt-4 flex flex-wrap items-end gap-3 text-sm">
+  <div>
+    <label class="cc-label">Search</label>
+    <input type="text" name="q" value="{{ filters.q }}" class="cc-input" placeholder="name, org, specialty">
+  </div>
+  <div>
+    <label class="cc-label">Source</label>
+    <select name="source" class="cc-input">
+      <option value="">All sources</option>
+      {% for value, label in source_choices %}
+        <option value="{{ value }}" {% if value == filters.source %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="cc-label">Email</label>
+    <select name="has_email" class="cc-input">
+      <option value="" {% if filters.has_email == '' %}selected{% endif %}>Any</option>
+      <option value="1" {% if filters.has_email == '1' %}selected{% endif %}>Has email</option>
+      <option value="0" {% if filters.has_email == '0' %}selected{% endif %}>Needs enrichment</option>
+    </select>
+  </div>
+  <div>
+    <label class="cc-label flex items-center gap-2">
+      <input type="checkbox" name="hide_added" value="1" {% if filters.hide_added == '1' %}checked{% endif %}>
+      Hide already-added
+    </label>
+  </div>
+  <button class="cc-btn cc-btn-ghost">Apply</button>
+</form>
+
+<!-- Table + bulk add form -->
+<form method="post" action="{% url 'add_leads_to_project' project.pk %}" class="mt-4">
+  {% csrf_token %}
+  <div class="surface-card overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 text-xs uppercase tracking-wider text-cc-muted">
+        <tr>
+          <th class="px-4 py-3 w-10"><input type="checkbox" id="selectAll"></th>
+          <th class="px-4 py-3 text-left">Name</th>
+          <th class="px-4 py-3 text-left">Organization</th>
+          <th class="px-4 py-3 text-left">Specialty</th>
+          <th class="px-4 py-3 text-left">Email</th>
+          <th class="px-4 py-3 text-left">Source</th>
+          <th class="px-4 py-3 text-left">Enrichment</th>
+          <th class="px-4 py-3"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for lead in page %}
+          <tr class="{% if lead.on_project %}bg-slate-50/60{% endif %}">
+            <td class="px-4 py-3">
+              {% if not lead.on_project %}
+                <input type="checkbox" name="lead_ids" value="{{ lead.pk }}" class="lead-select">
+              {% else %}
+                <span class="cc-chip ok text-[10px] px-2">Added</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 font-medium text-cc-ink">
+              {{ lead.first_name }} {{ lead.last_name }}
+              {% if not lead.first_name and not lead.last_name %}<span class="text-cc-muted">(org only)</span>{% endif %}
+            </td>
+            <td class="px-4 py-3 text-cc-ink">{{ lead.organization|default:"—" }}</td>
+            <td class="px-4 py-3 text-cc-muted">{{ lead.specialty|default:"—" }}</td>
+            <td class="px-4 py-3 text-cc-ink">
+              {% if lead.email %}{{ lead.email }}{% else %}<span class="text-cc-muted">—</span>{% endif %}
+            </td>
+            <td class="px-4 py-3"><span class="cc-chip muted text-[10px]">{{ lead.get_source_display }}</span></td>
+            <td class="px-4 py-3">
+              {% if lead.enrichment_status == 'needed' %}
+                <span class="cc-chip warn text-[10px]">Needs email</span>
+              {% elif lead.enrichment_status == 'failed' %}
+                <span class="cc-chip warn text-[10px]">Failed</span>
+              {% else %}
+                <span class="cc-chip ok text-[10px]">{{ lead.get_enrichment_status_display }}</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 text-right">
+              {% if apollo_configured and not lead.email %}
+                <button type="button"
+                        data-lead-id="{{ lead.pk }}"
+                        class="enrich-btn cc-btn cc-btn-ghost text-xs">Enrich</button>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8" class="px-4 py-12 text-center text-cc-muted text-sm">
+            No leads match these filters. Try sourcing from NPI or AI above.
+          </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="mt-4 flex items-center justify-between">
+    <div class="text-xs text-cc-muted">
+      Showing {{ page.start_index }}–{{ page.end_index }} of {{ page.paginator.count }}
+      {% if page.has_previous %}
+        · <a href="?{% if filters.q %}q={{ filters.q }}&{% endif %}{% if filters.source %}source={{ filters.source }}&{% endif %}{% if filters.has_email %}has_email={{ filters.has_email }}&{% endif %}hide_added={{ filters.hide_added }}&page={{ page.previous_page_number }}" class="text-cc-royal hover:underline">prev</a>
+      {% endif %}
+      {% if page.has_next %}
+        · <a href="?{% if filters.q %}q={{ filters.q }}&{% endif %}{% if filters.source %}source={{ filters.source }}&{% endif %}{% if filters.has_email %}has_email={{ filters.has_email }}&{% endif %}hide_added={{ filters.hide_added }}&page={{ page.next_page_number }}" class="text-cc-royal hover:underline">next</a>
+      {% endif %}
+    </div>
+    <button type="submit" class="cc-btn cc-btn-primary">Add selected to {{ project.study_code }}</button>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const selectAll = document.getElementById('selectAll');
+if (selectAll) {
+  selectAll.addEventListener('change', (e) => {
+    document.querySelectorAll('.lead-select').forEach(cb => cb.checked = e.target.checked);
+  });
+}
+
+function getCsrfToken() {
+  return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+}
+
+document.querySelectorAll('.enrich-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const leadId = btn.dataset.leadId;
+    btn.disabled = true;
+    btn.textContent = 'Enriching...';
+    try {
+      const res = await fetch(`/api/leads/${leadId}/enrich/`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'X-CSRFToken': getCsrfToken() },
+      });
+      const data = await res.json();
+      if (data.ok) {
+        btn.textContent = data.email ? data.email : (data.note || 'No email found');
+      } else {
+        btn.textContent = 'Error';
+        alert(data.error || 'Enrichment failed');
+      }
+    } catch (e) {
+      btn.textContent = 'Error';
+    }
+  });
+});
+</script>
+{% endblock %}

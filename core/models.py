@@ -311,6 +311,23 @@ class OptOut(models.Model):
         return self.email
 
 
+class ApolloCreditLog(models.Model):
+    """Audit trail of Apollo API calls for monthly-budget tracking."""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    endpoint = models.CharField(max_length=100)
+    credits = models.PositiveIntegerField(default=1)
+    notes = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['created_at'])]
+
+    def __str__(self):
+        return f'{self.endpoint} · {self.credits} cr · {self.created_at:%Y-%m-%d}'
+
+
 class AuditLog(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
     action = models.CharField(max_length=100, help_text="e.g. 'project.create', 'campaign.launch'")

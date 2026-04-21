@@ -24,7 +24,16 @@
       <div><dt class="text-cc-muted">Created by</dt><dd class="text-cc-ink">{{ project.created_by.get_full_name|default:project.created_by.username|default:"—" }}</dd></div>
       <div><dt class="text-cc-muted">Created</dt><dd class="text-cc-ink">{{ project.created_at|date:"M j, Y" }}</dd></div>
     </dl>
-    <div class="mt-6 pt-6 border-t border-slate-100">
+    <div class="mt-6 pt-6 border-t border-slate-100 space-y-2">
+      <a href="{% url 'partner_profile_edit' project.pk %}" class="cc-btn cc-btn-ghost w-full justify-center">
+        {% if project.partner_profile %}Edit{% else %}Define{% endif %} partner profile
+      </a>
+      <a href="{% url 'lead_review' project.pk %}" class="cc-btn cc-btn-primary w-full justify-center">
+        Review &amp; source leads →
+      </a>
+    </div>
+
+    <div class="mt-4 pt-4 border-t border-slate-100">
       <button id="btnTestInstantly" type="button" class="cc-btn cc-btn-ghost w-full justify-center">
         Test Instantly connection
       </button>

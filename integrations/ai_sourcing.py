@@ -40,6 +40,11 @@ SUPPORT_GROUP_TOOL_SCHEMA = {
                     'website': {'type': 'string', 'description': 'Homepage URL if known'},
                     'contact_page_url': {'type': 'string', 'description': 'Contact / outreach URL if known'},
                     'description': {'type': 'string', 'description': 'One-sentence description'},
+                    'suggested_roles': {
+                        'type': 'array',
+                        'items': {'type': 'string'},
+                        'description': '1–3 likely contact titles at this org for clinical-trial partnership (e.g. "Director of Patient Services", "VP of Medical Affairs", "Executive Director"). Helps the team know who to look for.',
+                    },
                 },
                 'required': ['name'],
             },
@@ -83,7 +88,104 @@ def suggest_support_groups(*, specialty_tags: list[str], geography: dict, limit:
             'content_url': org.get('website', '').strip(),
             'contact_page_url': org.get('contact_page_url', '').strip(),
             'description': org.get('description', '').strip(),
+            'suggested_roles': [r.strip() for r in (org.get('suggested_roles') or []) if r and str(r).strip()][:3],
         })
+    return normalized
+
+
+# ──────────────────────── page-level contact extraction ──────────────────────
+
+CONTACT_EXTRACT_SYSTEM_PROMPT = (
+    "You extract outreach-worthy contacts from a webpage's text. The caller is a "
+    "clinical-trial outreach team trying to find a real person at this organization "
+    "to contact about a partnership. You prefer named individuals over generic "
+    "inboxes (info@, contact@). For each named person you find, return their name, "
+    "title/role, email if on the page, phone if on the page, and a one-line note. "
+    "If the page only has a contact form with no names, return an empty list — "
+    "the team will handle those manually. Do not invent contacts not present in the text."
+)
+
+CONTACT_EXTRACT_TOOL_SCHEMA = {
+    'type': 'object',
+    'properties': {
+        'contacts': {
+            'type': 'array',
+            'items': {
+                'type': 'object',
+                'properties': {
+                    'name': {'type': 'string', 'description': 'Full name (first + last)'},
+                    'title': {'type': 'string', 'description': 'Role / title at the organization'},
+                    'email': {'type': 'string', 'description': 'Email on the page, if present'},
+                    'phone': {'type': 'string', 'description': 'Phone number on the page, if present'},
+                    'notes': {'type': 'string', 'description': 'One short line of context from the page'},
+                },
+                'required': ['name'],
+            },
+        },
+    },
+    'required': ['contacts'],
+}
+
+
+def extract_contacts_from_url(*, url: str, org_name: str, user=None) -> list[dict]:
+    """Fetch a page, strip to text, ask Claude to extract outreach contacts.
+    Returns a possibly-empty list of contact dicts."""
+    import requests
+    from django.utils.html import strip_tags
+
+    try:
+        r = requests.get(
+            url,
+            timeout=15,
+            headers={'User-Agent': 'Mozilla/5.0 CliniContact-Bridge/1.0'},
+            allow_redirects=True,
+        )
+        r.raise_for_status()
+    except Exception as exc:  # noqa: BLE001
+        log.warning('Contact extract: failed to fetch %s: %s', url, exc)
+        raise RuntimeError(f'Could not load page ({exc})') from exc
+
+    # Cap to a sane size before stripping — some pages are huge
+    raw_html = r.text[:600_000]
+    text = strip_tags(raw_html)
+    text = ' '.join(text.split())[:20_000]
+
+    if not text.strip():
+        return []
+
+    prompt = (
+        f"Organization: {org_name}\n"
+        f"Page URL: {url}\n\n"
+        f"Page text (extracted from HTML):\n---\n{text}\n---\n\n"
+        f"Use the return_contacts tool to return any named contacts suitable for "
+        f"clinical-trial partnership outreach. Return an empty list if the page "
+        f"only has generic email forms or no named people."
+    )
+    result = AIService.call_structured(
+        prompt=prompt,
+        system_prompt=CONTACT_EXTRACT_SYSTEM_PROMPT,
+        tool_name='return_contacts',
+        tool_description='Return named outreach contacts extracted from the page text.',
+        tool_schema=CONTACT_EXTRACT_TOOL_SCHEMA,
+        function_name='extract_contacts_from_url',
+        user=user,
+        max_tokens=2048,
+    )
+    contacts = result.get('contacts') if isinstance(result, dict) else []
+    normalized = []
+    for c in contacts or []:
+        if not isinstance(c, dict) or not c.get('name'):
+            continue
+        name_parts = c.get('name', '').strip().split(' ', 1)
+        normalized.append({
+            'first_name': name_parts[0] if name_parts else '',
+            'last_name': name_parts[1] if len(name_parts) > 1 else '',
+            'role': (c.get('title') or '').strip(),
+            'email': (c.get('email') or '').strip().lower() or None,
+            'phone': (c.get('phone') or '').strip(),
+            'notes': (c.get('notes') or '').strip(),
+        })
+    log.info('extract_contacts_from_url: %s → %d contacts', url, len(normalized))
     return normalized
 
 

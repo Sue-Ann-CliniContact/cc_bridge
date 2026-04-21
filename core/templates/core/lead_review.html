@@ -155,6 +155,11 @@
               {% if lead.pending_conflict %}
                 <a href="{% url 'lead_edit' lead.pk %}" class="cc-chip warn text-[10px] mr-1">Conflict</a>
               {% endif %}
+              {% if lead.source == 'ai_suggested' and lead.contact_url and not lead.email %}
+                <button type="button"
+                        data-lead-id="{{ lead.pk }}"
+                        class="find-contact-btn cc-btn cc-btn-ghost text-xs mr-1">Find contact</button>
+              {% endif %}
               {% if apollo_configured and not lead.email %}
                 <button type="button"
                         data-lead-id="{{ lead.pk }}"
@@ -217,6 +222,36 @@ document.querySelectorAll('.enrich-btn').forEach(btn => {
       } else {
         btn.textContent = 'Error';
         alert(data.error || 'Enrichment failed');
+      }
+    } catch (e) {
+      btn.textContent = 'Error';
+    }
+  });
+});
+
+document.querySelectorAll('.find-contact-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const leadId = btn.dataset.leadId;
+    btn.disabled = true;
+    btn.textContent = 'Fetching page...';
+    try {
+      const res = await fetch(`/api/leads/${leadId}/find-contact/`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'X-CSRFToken': getCsrfToken() },
+      });
+      const data = await res.json();
+      if (data.ok) {
+        const n = data.created_count || 0;
+        if (n > 0) {
+          btn.textContent = `+${n} contact${n === 1 ? '' : 's'}`;
+          setTimeout(() => window.location.reload(), 900);
+        } else {
+          btn.textContent = data.note || 'No named contacts';
+        }
+      } else {
+        btn.textContent = 'Error';
+        alert(data.error || 'Contact extraction failed');
       }
     } catch (e) {
       btn.textContent = 'Error';

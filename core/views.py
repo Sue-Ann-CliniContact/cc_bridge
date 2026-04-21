@@ -344,6 +344,15 @@ def enrich_lead(request, lead_id):
 
 
 @login_required
+@require_POST
+def find_org_contact(request, lead_id):
+    """Fetch the org's contact URL and extract named contacts via Claude."""
+    lead = get_object_or_404(Lead, pk=lead_id)
+    result = sourcing.find_contact_from_org_page(lead, user=request.user)
+    return JsonResponse(result)
+
+
+@login_required
 def lead_import_csv(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
     if request.method == 'POST' and request.FILES.get('file'):

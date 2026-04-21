@@ -200,13 +200,17 @@ def source_from_ai(project: Project, *, limit: int = 30, user=None) -> SourcingR
     for s in suggestions:
         # AI suggestions are org-level; humans go to the contact_url to find the right email
         contact_url = s.get('contact_page_url') or s.get('content_url') or ''
+        suggested_roles = s.get('suggested_roles') or []
         lead, created, conflict = _persist_candidate(
             {
                 'organization': s.get('organization', ''),
                 'role': 'Organization',
                 'specialty': ', '.join(profile.specialty_tags or [])[:255],
                 'contact_url': contact_url,
-                'geography': {'notes': s.get('description', '')},
+                'geography': {
+                    'notes': s.get('description', ''),
+                    'suggested_roles': suggested_roles,
+                },
             },
             default_source=Lead.SOURCE_AI_SUGGESTED,
             default_enrichment=Lead.ENRICHMENT_NEEDED,
@@ -215,6 +219,69 @@ def source_from_ai(project: Project, *, limit: int = 30, user=None) -> SourcingR
         if conflict:
             result.conflicts.append(lead.pk)
     return result
+
+
+@transaction.atomic
+def find_contact_from_org_page(org_lead: Lead, *, user=None) -> dict:
+    """Fetch the org's contact_url, ask Claude to extract named contacts, and
+    persist each as a new Lead. If an existing Lead matches by email, dedup as usual.
+
+    Returns a summary the UI can render: {created_count, contacts: [{name, email, ...}]}.
+    """
+    if not org_lead.contact_url:
+        return {'ok': False, 'error': 'This lead has no contact URL.'}
+
+    try:
+        contacts = ai_sourcing.extract_contacts_from_url(
+            url=org_lead.contact_url,
+            org_name=org_lead.organization,
+            user=user,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {'ok': False, 'error': str(exc)}
+
+    if not contacts:
+        return {
+            'ok': True,
+            'created_count': 0,
+            'contacts': [],
+            'note': 'Page has no named contacts (only generic forms) — try a staff / about page.',
+        }
+
+    opted_out = set(OptOut.objects.filter(
+        email__in=[c['email'] for c in contacts if c.get('email')]
+    ).values_list('email', flat=True))
+
+    created_pks = []
+    preview = []
+    for c in contacts:
+        email = c.get('email')
+        if email and email in opted_out:
+            continue
+        lead, created, _ = _persist_candidate(
+            {
+                'first_name': c['first_name'],
+                'last_name': c['last_name'],
+                'role': c['role'] or 'Contact',
+                'email': email,
+                'phone': c['phone'],
+                'organization': org_lead.organization,
+                'specialty': org_lead.specialty,
+                'contact_url': org_lead.contact_url,
+                'geography': {'notes': c.get('notes', '')},
+            },
+            default_source=Lead.SOURCE_AI_SUGGESTED,
+            default_enrichment=Lead.ENRICHMENT_COMPLETE if email else Lead.ENRICHMENT_NEEDED,
+        )
+        if created:
+            created_pks.append(lead.pk)
+        preview.append({
+            'lead_id': lead.pk,
+            'name': f"{lead.first_name} {lead.last_name}".strip(),
+            'role': lead.role,
+            'email': lead.email or '',
+        })
+    return {'ok': True, 'created_count': len(created_pks), 'contacts': preview}
 
 
 @transaction.atomic

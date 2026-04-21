@@ -21,5 +21,6 @@ urlpatterns = [
     path('leads/<int:lead_id>/edit/', views.lead_edit, name='lead_edit'),
     path('leads/<int:lead_id>/resolve-conflict/', views.lead_resolve_conflict, name='lead_resolve_conflict'),
     path('api/leads/<int:lead_id>/enrich/', views.enrich_lead, name='enrich_lead'),
+    path('api/leads/<int:lead_id>/find-contact/', views.find_org_contact, name='find_org_contact'),
     path('api/instantly/ping/', views.test_instantly, name='test_instantly'),
 ]

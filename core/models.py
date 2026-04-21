@@ -115,6 +115,7 @@ class Lead(models.Model):
     SOURCE_CSV = 'csv_import'
     SOURCE_MANUAL = 'manual'
     SOURCE_CTGOV = 'ctgov'
+    SOURCE_MONDAY = 'monday_import'
     SOURCE_CHOICES = [
         (SOURCE_NPI, 'NPI Registry'),
         (SOURCE_APOLLO, 'Apollo'),
@@ -122,6 +123,7 @@ class Lead(models.Model):
         (SOURCE_CSV, 'CSV Import'),
         (SOURCE_MANUAL, 'Manual'),
         (SOURCE_CTGOV, 'ClinicalTrials.gov'),
+        (SOURCE_MONDAY, 'Monday Board Import'),
     ]
 
     ENRICHMENT_NEEDED = 'needed'
@@ -149,6 +151,12 @@ class Lead(models.Model):
     global_opt_out = models.BooleanField(default=False)
     do_not_contact_reason = models.CharField(max_length=255, blank=True)
     quality_score = models.FloatField(null=True, blank=True)
+    pending_conflict = models.JSONField(
+        null=True,
+        blank=True,
+        help_text='Set when an import matched this lead by email but had different name/org. '
+                  'Resolve by merging or dismissing in the lead review UI.',
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

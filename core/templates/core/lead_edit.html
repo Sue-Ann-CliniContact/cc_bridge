@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ lead }} · Bridge{% endblock %}
+
+{% block content %}
+<a href="javascript:history.back()" class="text-sm text-cc-muted hover:text-cc-royal">← Back</a>
+
+<h1 class="mt-3 text-3xl font-black tracking-tight text-cc-ink">Edit lead</h1>
+<p class="mt-1 text-sm text-cc-muted">
+  Manually fill in or fix fields when Apollo can't resolve an email, or to correct imported data.
+</p>
+
+{% if messages %}
+  <div class="mt-4 space-y-2">
+    {% for msg in messages %}
+      <div class="rounded-xl px-4 py-3 text-sm bg-emerald-50 text-emerald-700">{{ msg }}</div>
+    {% endfor %}
+  </div>
+{% endif %}
+
+{% if lead.pending_conflict %}
+  <div class="surface-card mt-6 p-6 border border-amber-200">
+    <h2 class="text-sm font-bold uppercase tracking-wider text-amber-800">Pending merge conflict</h2>
+    <p class="mt-2 text-sm text-cc-muted">An import matched this lead by email but had different name/org fields. Decide below.</p>
+    <pre class="mt-3 overflow-auto rounded-xl bg-slate-50 p-4 text-xs text-slate-700">{{ lead.pending_conflict|pprint }}</pre>
+    <form method="post" action="{% url 'lead_resolve_conflict' lead.pk %}" class="mt-3 flex gap-3">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{% url 'lead_edit' lead.pk %}">
+      <button name="action" value="merge" class="cc-btn cc-btn-primary">Merge incoming fields</button>
+      <button name="action" value="skip" class="cc-btn cc-btn-ghost">Dismiss (keep existing)</button>
+    </form>
+  </div>
+{% endif %}
+
+<form method="post" class="surface-card mt-6 p-8 max-w-3xl space-y-5">
+  {% csrf_token %}
+  <div class="grid gap-4 md:grid-cols-2">
+    <div><label class="cc-label">First name</label>{{ form.first_name }}</div>
+    <div><label class="cc-label">Last name</label>{{ form.last_name }}</div>
+    <div><label class="cc-label">Email</label>{{ form.email }}</div>
+    <div><label class="cc-label">Phone</label>{{ form.phone }}</div>
+    <div><label class="cc-label">Organization</label>{{ form.organization }}</div>
+    <div><label class="cc-label">Role / title</label>{{ form.role }}</div>
+    <div><label class="cc-label">Specialty</label>{{ form.specialty }}</div>
+    <div><label class="cc-label">NPI</label>{{ form.npi }}</div>
+    <div><label class="cc-label">Enrichment status</label>{{ form.enrichment_status }}</div>
+    <div class="md:col-span-2 pt-2 border-t border-slate-100">
+      <label class="cc-label flex items-center gap-2">
+        {{ form.global_opt_out }} Global opt-out (excludes from all projects forever)
+      </label>
+    </div>
+    <div class="md:col-span-2">
+      <label class="cc-label">Do-not-contact reason</label>{{ form.do_not_contact_reason }}
+    </div>
+  </div>
+  <div class="flex justify-end gap-3 pt-4 border-t border-slate-100">
+    <a href="javascript:history.back()" class="cc-btn cc-btn-ghost">Cancel</a>
+    <button type="submit" class="cc-btn cc-btn-primary">Save</button>
+  </div>
+</form>
+{% endblock %}

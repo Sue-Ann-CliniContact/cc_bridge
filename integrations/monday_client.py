@@ -56,3 +56,64 @@ def get_board(user, board_id: str) -> dict:
     data = graphql(user, query, {'boardId': [board_id]})
     boards = data.get('boards') or []
     return boards[0] if boards else {}
+
+
+def list_board_items(user, board_id: str, limit: int = 500) -> dict:
+    """Fetch board metadata + items with column values for import mapping."""
+    query = """
+    query ($boardId: [ID!], $limit: Int!) {
+      boards (ids: $boardId) {
+        id
+        name
+        columns { id title type }
+        items_page (limit: $limit) {
+          items {
+            id
+            name
+            group { id title }
+            column_values {
+              id
+              text
+              value
+              column { id title type }
+            }
+          }
+        }
+      }
+    }
+    """
+    data = graphql(user, query, {'boardId': [board_id], 'limit': limit})
+    boards = data.get('boards') or []
+    if not boards:
+        return {'board': None, 'columns': [], 'items': []}
+    board = boards[0]
+    return {
+        'board': {'id': board.get('id'), 'name': board.get('name')},
+        'columns': board.get('columns') or [],
+        'items': (board.get('items_page') or {}).get('items') or [],
+    }
+
+
+def auto_map_columns(columns: list[dict]) -> dict:
+    """Guess which Monday columns correspond to email/name/org/etc. by title."""
+    mapping = {'email': '', 'first_name': '', 'last_name': '', 'organization': '', 'role': '', 'phone': '', 'specialty': ''}
+    for col in columns:
+        title = (col.get('title') or '').strip().lower()
+        col_id = col.get('id')
+        if not col_id:
+            continue
+        if 'email' in title and not mapping['email']:
+            mapping['email'] = col_id
+        elif 'phone' in title and not mapping['phone']:
+            mapping['phone'] = col_id
+        elif ('org' in title or 'company' in title or 'institution' in title) and not mapping['organization']:
+            mapping['organization'] = col_id
+        elif ('role' in title or 'title' in title or 'position' in title) and not mapping['role']:
+            mapping['role'] = col_id
+        elif ('specialty' in title or 'taxonomy' in title or 'therapeutic' in title) and not mapping['specialty']:
+            mapping['specialty'] = col_id
+        elif ('first' in title and 'name' in title) and not mapping['first_name']:
+            mapping['first_name'] = col_id
+        elif ('last' in title and 'name' in title) and not mapping['last_name']:
+            mapping['last_name'] = col_id
+    return mapping

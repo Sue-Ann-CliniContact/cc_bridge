@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from django.db import transaction
 
 from core.models import Lead, OptOut, PartnerProfile, Project
-from integrations import ai_sourcing, apollo, npi
+from integrations import ai_sourcing, apollo, monday_client, npi
 
 
 @dataclass
@@ -22,6 +22,7 @@ class SourcingResult:
     candidates_found: int = 0
     created: list[int] = field(default_factory=list)  # lead IDs
     reused: list[int] = field(default_factory=list)
+    conflicts: list[int] = field(default_factory=list)  # lead IDs flagged with pending_conflict
     skipped_opted_out: int = 0
     errors: list[str] = field(default_factory=list)
 
@@ -31,6 +32,7 @@ class SourcingResult:
             'candidates_found': self.candidates_found,
             'created_count': len(self.created),
             'reused_count': len(self.reused),
+            'conflict_count': len(self.conflicts),
             'skipped_opted_out': self.skipped_opted_out,
             'errors': self.errors,
         }
@@ -42,9 +44,13 @@ def _opted_out_emails(emails: list[str]) -> set[str]:
     return set(OptOut.objects.filter(email__in=emails).values_list('email', flat=True))
 
 
-def _persist_candidate(candidate: dict, default_source: str, default_enrichment: str = Lead.ENRICHMENT_COMPLETE) -> tuple[Lead, bool]:
+def _persist_candidate(candidate: dict, default_source: str, default_enrichment: str = Lead.ENRICHMENT_COMPLETE) -> tuple[Lead, bool, bool]:
     """Look up an existing Lead by email or npi; create if absent.
-    Returns (lead, created)."""
+    If the match has materially different name/org, attach pending_conflict for
+    human review rather than silently overwriting.
+
+    Returns (lead, created, conflict_flagged).
+    """
     email = (candidate.get('email') or '').strip().lower() or None
     npi_val = (candidate.get('npi') or '').strip() or None
 
@@ -55,7 +61,25 @@ def _persist_candidate(candidate: dict, default_source: str, default_enrichment:
         existing = Lead.objects.filter(npi=npi_val).first()
 
     if existing:
-        return existing, False
+        conflict = _diff_fields(existing, candidate)
+        if conflict:
+            existing.pending_conflict = {
+                'source': default_source,
+                'incoming': {
+                    'first_name': candidate.get('first_name', ''),
+                    'last_name': candidate.get('last_name', ''),
+                    'email': email or '',
+                    'phone': candidate.get('phone', ''),
+                    'npi': npi_val or '',
+                    'organization': candidate.get('organization', ''),
+                    'role': candidate.get('role', ''),
+                    'specialty': candidate.get('specialty', ''),
+                },
+                'differs': conflict,
+            }
+            existing.save(update_fields=['pending_conflict', 'updated_at'])
+            return existing, False, True
+        return existing, False, False
 
     lead = Lead.objects.create(
         first_name=candidate.get('first_name', ''),
@@ -70,7 +94,38 @@ def _persist_candidate(candidate: dict, default_source: str, default_enrichment:
         source=default_source,
         enrichment_status=default_enrichment,
     )
-    return lead, True
+    return lead, True, False
+
+
+def _diff_fields(lead: Lead, candidate: dict) -> list[str]:
+    """Return list of field names where incoming differs from existing in a meaningful way."""
+    differs = []
+    pairs = [
+        ('first_name', lead.first_name, candidate.get('first_name', '')),
+        ('last_name', lead.last_name, candidate.get('last_name', '')),
+        ('organization', lead.organization, candidate.get('organization', '')),
+    ]
+    for field, existing_val, incoming_val in pairs:
+        existing_norm = (existing_val or '').strip().lower()
+        incoming_norm = (incoming_val or '').strip().lower()
+        if incoming_norm and existing_norm and incoming_norm != existing_norm:
+            differs.append(field)
+    return differs
+
+
+def resolve_conflict(lead: Lead, action: str) -> Lead:
+    """action='merge' applies incoming fields to lead; 'skip' just clears the flag."""
+    if not lead.pending_conflict:
+        return lead
+    if action == 'merge':
+        incoming = lead.pending_conflict.get('incoming') or {}
+        for field in ('first_name', 'last_name', 'organization', 'role', 'specialty', 'phone'):
+            val = (incoming.get(field) or '').strip()
+            if val:
+                setattr(lead, field, val)
+    lead.pending_conflict = None
+    lead.save()
+    return lead
 
 
 @transaction.atomic
@@ -103,8 +158,10 @@ def source_from_npi(project: Project, *, limit: int = 100) -> SourcingResult:
     result.candidates_found = len(raw_candidates)
     # NPI rarely returns email; mark new leads as needing enrichment
     for cand in raw_candidates:
-        lead, created = _persist_candidate(cand, default_source=Lead.SOURCE_NPI, default_enrichment=Lead.ENRICHMENT_NEEDED)
+        lead, created, conflict = _persist_candidate(cand, default_source=Lead.SOURCE_NPI, default_enrichment=Lead.ENRICHMENT_NEEDED)
         (result.created if created else result.reused).append(lead.pk)
+        if conflict:
+            result.conflicts.append(lead.pk)
     return result
 
 
@@ -130,7 +187,7 @@ def source_from_ai(project: Project, *, limit: int = 30, user=None) -> SourcingR
     result.candidates_found = len(suggestions)
     for s in suggestions:
         # AI suggestions are org-level; we persist without email (human must find it)
-        lead, created = _persist_candidate(
+        lead, created, conflict = _persist_candidate(
             {
                 'organization': s.get('organization', ''),
                 'role': 'Organization',
@@ -141,6 +198,75 @@ def source_from_ai(project: Project, *, limit: int = 30, user=None) -> SourcingR
             default_enrichment=Lead.ENRICHMENT_NEEDED,
         )
         (result.created if created else result.reused).append(lead.pk)
+        if conflict:
+            result.conflicts.append(lead.pk)
+    return result
+
+
+@transaction.atomic
+def import_from_monday_board(
+    project: Project,
+    *,
+    board_id: str,
+    column_map: dict,
+    user,
+) -> SourcingResult:
+    """Fetch items from a Monday board and import them as Leads.
+    column_map keys: email, first_name, last_name, organization, role, phone, specialty.
+    """
+    result = SourcingResult(source='monday_import')
+    try:
+        payload = monday_client.list_board_items(user, board_id)
+    except Exception as exc:  # noqa: BLE001
+        result.errors.append(f'Monday API error: {exc}')
+        return result
+
+    items = payload.get('items') or []
+    result.candidates_found = len(items)
+    opted_out = set(OptOut.objects.values_list('email', flat=True))
+
+    for item in items:
+        cvs = {cv.get('column', {}).get('id'): (cv.get('text') or '').strip() for cv in item.get('column_values') or []}
+
+        email_raw = cvs.get(column_map.get('email', '')) or ''
+        email_norm = email_raw.strip().lower() or None
+        if email_norm and email_norm in opted_out:
+            result.skipped_opted_out += 1
+            continue
+
+        first = cvs.get(column_map.get('first_name', '')) or ''
+        last = cvs.get(column_map.get('last_name', '')) or ''
+        # If neither first/last columns mapped, fall back to item.name split
+        if not first and not last and item.get('name'):
+            parts = item['name'].strip().split(' ', 1)
+            first = parts[0]
+            last = parts[1] if len(parts) > 1 else ''
+
+        candidate = {
+            'first_name': first,
+            'last_name': last,
+            'email': email_norm,
+            'phone': cvs.get(column_map.get('phone', '')) or '',
+            'organization': cvs.get(column_map.get('organization', '')) or '',
+            'role': cvs.get(column_map.get('role', '')) or '',
+            'specialty': cvs.get(column_map.get('specialty', '')) or '',
+            'geography': {'monday_board_id': board_id, 'monday_item_id': item.get('id')},
+        }
+
+        lead, created, conflict = _persist_candidate(
+            candidate,
+            default_source=Lead.SOURCE_MONDAY,
+            default_enrichment=Lead.ENRICHMENT_COMPLETE if email_norm else Lead.ENRICHMENT_NEEDED,
+        )
+        # Remember the Monday item ID on a newly-created lead so we can two-way sync later
+        if created and item.get('id'):
+            geo = lead.geography or {}
+            geo['monday_item_id'] = item['id']
+            lead.geography = geo
+            lead.save(update_fields=['geography', 'updated_at'])
+        (result.created if created else result.reused).append(lead.pk)
+        if conflict:
+            result.conflicts.append(lead.pk)
     return result
 
 

@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Conflicts · {{ project.study_code }}{% endblock %}
+
+{% block content %}
+<a href="{% url 'lead_review' project.pk %}" class="text-sm text-cc-muted hover:text-cc-royal">← Back to leads</a>
+
+<h1 class="mt-3 text-3xl font-black tracking-tight text-cc-ink">Merge conflicts</h1>
+<p class="mt-2 text-sm text-cc-muted">
+  An import matched one of these leads by email but had a different name or organization.
+  Decide whether to overwrite with the incoming values or keep the existing record.
+</p>
+
+{% if messages %}
+  <div class="mt-4 space-y-2">
+    {% for msg in messages %}
+      <div class="rounded-xl px-4 py-3 text-sm bg-emerald-50 text-emerald-700">{{ msg }}</div>
+    {% endfor %}
+  </div>
+{% endif %}
+
+{% if leads %}
+  <ul class="mt-6 space-y-4">
+    {% for lead in leads %}
+      <li class="surface-card p-6">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <p class="text-xs font-bold uppercase tracking-wider text-cc-muted">Existing record</p>
+            <p class="text-lg font-bold text-cc-ink">{{ lead.first_name }} {{ lead.last_name }}</p>
+            <p class="text-sm text-cc-muted">{{ lead.organization|default:"—" }} · {{ lead.email|default:"no email" }}</p>
+          </div>
+          <a href="{% url 'lead_edit' lead.pk %}" class="cc-btn cc-btn-ghost text-xs">Open lead</a>
+        </div>
+
+        <div class="mt-4 grid gap-4 md:grid-cols-2 text-sm">
+          <div>
+            <p class="cc-label">Current</p>
+            <dl class="space-y-1">
+              <div><dt class="inline text-cc-muted">Name:</dt> <dd class="inline text-cc-ink">{{ lead.first_name }} {{ lead.last_name }}</dd></div>
+              <div><dt class="inline text-cc-muted">Org:</dt> <dd class="inline text-cc-ink">{{ lead.organization|default:"—" }}</dd></div>
+              <div><dt class="inline text-cc-muted">Role:</dt> <dd class="inline text-cc-ink">{{ lead.role|default:"—" }}</dd></div>
+            </dl>
+          </div>
+          <div>
+            <p class="cc-label">Incoming ({{ lead.pending_conflict.source }})</p>
+            <dl class="space-y-1">
+              <div><dt class="inline text-cc-muted">Name:</dt> <dd class="inline text-cc-ink">{{ lead.pending_conflict.incoming.first_name }} {{ lead.pending_conflict.incoming.last_name }}</dd></div>
+              <div><dt class="inline text-cc-muted">Org:</dt> <dd class="inline text-cc-ink">{{ lead.pending_conflict.incoming.organization|default:"—" }}</dd></div>
+              <div><dt class="inline text-cc-muted">Role:</dt> <dd class="inline text-cc-ink">{{ lead.pending_conflict.incoming.role|default:"—" }}</dd></div>
+            </dl>
+            <p class="mt-2 text-xs text-cc-muted">Differs on: {{ lead.pending_conflict.differs|join:", " }}</p>
+          </div>
+        </div>
+
+        <form method="post" action="{% url 'lead_resolve_conflict' lead.pk %}" class="mt-4 flex justify-end gap-3">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{% url 'lead_conflicts' project.pk %}">
+          <button name="action" value="skip" class="cc-btn cc-btn-ghost">Keep existing</button>
+          <button name="action" value="merge" class="cc-btn cc-btn-primary">Merge incoming</button>
+        </form>
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <div class="surface-card mt-6 p-12 text-center">
+    <h2 class="text-lg font-bold text-cc-ink">No conflicts 🎉</h2>
+    <p class="mt-2 text-sm text-cc-muted">Nothing to merge right now.</p>
+  </div>
+{% endif %}
+{% endblock %}

@@ -22,5 +22,6 @@ urlpatterns = [
     path('leads/<int:lead_id>/resolve-conflict/', views.lead_resolve_conflict, name='lead_resolve_conflict'),
     path('api/leads/<int:lead_id>/enrich/', views.enrich_lead, name='enrich_lead'),
     path('api/leads/<int:lead_id>/find-contact/', views.find_org_contact, name='find_org_contact'),
+    path('tools/cleanup-non-monday-leads/', views.cleanup_non_monday_leads_view, name='cleanup_non_monday_leads'),
     path('api/instantly/ping/', views.test_instantly, name='test_instantly'),
 ]

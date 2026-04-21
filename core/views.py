@@ -357,6 +357,40 @@ def find_org_contact(request, lead_id):
 
 
 @login_required
+def cleanup_non_monday_leads_view(request):
+    """Browser-accessible version of the cleanup management command — used when
+    the Render Shell is unresponsive. GET shows the preview; POST with a
+    confirmation token actually deletes.
+    """
+    from django.db.models import Count
+
+    target = Lead.objects.exclude(source=Lead.SOURCE_MONDAY)
+    total_to_delete = target.count()
+    total_kept = Lead.objects.filter(source=Lead.SOURCE_MONDAY).count()
+    breakdown = list(
+        target.values('source').annotate(n=Count('id')).order_by('-n')
+    )
+
+    if request.method == 'POST' and request.POST.get('confirm') == 'DELETE-NON-MONDAY-LEADS':
+        if total_to_delete == 0:
+            messages.info(request, 'Nothing to delete.')
+            return redirect('dashboard')
+        deleted_count, per_model = target.delete()
+        messages.success(
+            request,
+            f'Deleted {deleted_count} rows. Breakdown: '
+            + ', '.join(f'{k.split(".")[-1]}={v}' for k, v in per_model.items()),
+        )
+        return redirect('dashboard')
+
+    return render(request, 'core/cleanup_leads.html', {
+        'total_to_delete': total_to_delete,
+        'total_kept': total_kept,
+        'breakdown': breakdown,
+    })
+
+
+@login_required
 def lead_import_csv(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
     if request.method == 'POST' and request.FILES.get('file'):

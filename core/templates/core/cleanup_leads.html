@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Cleanup non-Monday leads · Bridge{% endblock %}
+
+{% block content %}
+<a href="{% url 'dashboard' %}" class="text-sm text-cc-muted hover:text-cc-royal">← Back to dashboard</a>
+
+<h1 class="mt-3 text-3xl font-black tracking-tight text-cc-ink">Cleanup: non-Monday leads</h1>
+<p class="mt-2 text-sm text-cc-muted">
+  Removes every Lead whose source is not a Monday board import. ProjectLead + OutreachEvent rows cascade.
+  OptOut, audit log, projects, assets, partner profile, and usage logs are preserved.
+</p>
+
+{% if messages %}
+  <div class="mt-4 space-y-2 max-w-2xl">
+    {% for msg in messages %}
+      <div class="rounded-xl px-4 py-3 text-sm bg-emerald-50 text-emerald-700">{{ msg }}</div>
+    {% endfor %}
+  </div>
+{% endif %}
+
+<div class="surface-card mt-6 p-8 max-w-2xl">
+  <p class="text-sm">
+    <strong class="text-cc-ink">Will delete:</strong> {{ total_to_delete }} lead{{ total_to_delete|pluralize }}.
+    <br>
+    <strong class="text-cc-ink">Will keep:</strong> {{ total_kept }} Monday-imported lead{{ total_kept|pluralize }}.
+  </p>
+
+  {% if breakdown %}
+    <ul class="mt-4 space-y-1 text-sm">
+      {% for row in breakdown %}
+        <li class="flex justify-between border-b border-slate-100 py-1">
+          <span class="text-cc-muted">{{ row.source }}</span>
+          <span class="font-semibold text-cc-ink">{{ row.n }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  {% if total_to_delete > 0 %}
+    <form method="post" class="mt-6 pt-6 border-t border-slate-100">
+      {% csrf_token %}
+      <input type="hidden" name="confirm" value="DELETE-NON-MONDAY-LEADS">
+      <button type="submit" class="cc-btn cc-btn-primary"
+              onclick="return confirm('Permanently delete {{ total_to_delete }} leads? This cannot be undone.');">
+        Delete {{ total_to_delete }} lead{{ total_to_delete|pluralize }}
+      </button>
+    </form>
+  {% else %}
+    <p class="mt-6 text-sm text-cc-muted">Nothing to delete — you're clean.</p>
+  {% endif %}
+</div>
+{% endblock %}

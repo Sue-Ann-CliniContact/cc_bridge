@@ -56,9 +56,17 @@
         </form>
       {% endif %}
       <a href="{% url 'lead_import_csv' project.pk %}" class="cc-btn cc-btn-ghost">Import CSV</a>
+      <a href="{% url 'monday_import_picker' project.pk %}" class="cc-btn cc-btn-ghost">Import from Monday</a>
     </div>
   </div>
 </div>
+
+{% if conflict_count %}
+  <div class="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex items-center justify-between">
+    <span>⚠ {{ conflict_count }} lead{{ conflict_count|pluralize }} with pending merge conflict{{ conflict_count|pluralize }}.</span>
+    <a href="{% url 'lead_conflicts' project.pk %}" class="font-semibold hover:underline">Review →</a>
+  </div>
+{% endif %}
 
 <!-- Filters -->
 <form method="get" class="mt-4 flex flex-wrap items-end gap-3 text-sm">
@@ -138,12 +146,16 @@
                 <span class="cc-chip ok text-[10px]">{{ lead.get_enrichment_status_display }}</span>
               {% endif %}
             </td>
-            <td class="px-4 py-3 text-right">
+            <td class="px-4 py-3 text-right whitespace-nowrap">
+              {% if lead.pending_conflict %}
+                <a href="{% url 'lead_edit' lead.pk %}" class="cc-chip warn text-[10px] mr-1">Conflict</a>
+              {% endif %}
               {% if apollo_configured and not lead.email %}
                 <button type="button"
                         data-lead-id="{{ lead.pk }}"
-                        class="enrich-btn cc-btn cc-btn-ghost text-xs">Enrich</button>
+                        class="enrich-btn cc-btn cc-btn-ghost text-xs mr-1">Enrich</button>
               {% endif %}
+              <a href="{% url 'lead_edit' lead.pk %}?next={% url 'lead_review' project.pk %}" class="cc-btn cc-btn-ghost text-xs">Edit</a>
             </td>
           </tr>
         {% empty %}

@@ -10,10 +10,12 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
+from integrations import ai_sourcing as ai_sourcing_client
 from integrations import apollo as apollo_client
 from integrations import instantly as instantly_client
+from integrations import monday_client
 
-from .forms import PartnerProfileForm, ProjectForm, StudyAssetForm
+from .forms import LeadEditForm, PartnerProfileForm, ProjectForm, StudyAssetForm
 from .models import Lead, OptOut, PartnerProfile, Project, ProjectLead, StudyAsset
 from .services import sourcing
 
@@ -82,6 +84,8 @@ def test_instantly(request):
 def partner_profile_edit(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
     profile = getattr(project, 'partner_profile', None)
+    suggestion = request.session.pop('suggested_profile', None) if request.method == 'GET' else None
+
     if request.method == 'POST':
         form = PartnerProfileForm(request.POST, instance=profile)
         if form.is_valid():
@@ -90,12 +94,153 @@ def partner_profile_edit(request, project_id):
             instance.save()
             return redirect('project_detail', project_id=project.pk)
     else:
-        form = PartnerProfileForm(instance=profile)
+        initial = {}
+        if suggestion:
+            initial = {
+                'partner_type': suggestion.get('partner_type') or (profile.partner_type if profile else 'clinician'),
+                'specialty_tags_csv': ', '.join(suggestion.get('specialty_tags') or []),
+                'icd10_codes_csv': ', '.join(suggestion.get('icd10_codes') or []),
+                'target_size': suggestion.get('target_size') or (profile.target_size if profile else 100),
+            }
+            geo = suggestion.get('geography') or {}
+            initial['geography_mode'] = geo.get('type') or 'national'
+            initial['geography_states_csv'] = ', '.join(geo.get('states') or [])
+            initial['geography_zip'] = geo.get('zip') or ''
+            initial['geography_radius_miles'] = geo.get('radius_miles')
+        form = PartnerProfileForm(instance=profile, initial=initial)
     return render(request, 'core/partner_profile_form.html', {
         'project': project,
         'profile': profile,
         'form': form,
+        'suggestion': suggestion,
     })
+
+
+@login_required
+@require_POST
+def partner_profile_suggest(request, project_id):
+    project = get_object_or_404(Project, pk=project_id)
+    asset_texts = []
+    for asset in project.assets.all():
+        if asset.content_text:
+            asset_texts.append(f'[{asset.get_type_display()}{": " + asset.subject if asset.subject else ""}]\n{asset.content_text}')
+        elif asset.content_url:
+            asset_texts.append(f'[{asset.get_type_display()}] URL: {asset.content_url}')
+    try:
+        suggestion = ai_sourcing_client.suggest_partner_profile(
+            project_name=project.name,
+            study_code=project.study_code,
+            asset_texts=asset_texts,
+            user=request.user,
+        )
+    except Exception as exc:  # noqa: BLE001
+        messages.error(request, f'AI suggestion failed: {exc}')
+        return redirect('partner_profile_edit', project_id=project.pk)
+
+    if not suggestion:
+        messages.warning(request, 'AI did not return a usable suggestion. Try again or fill in manually.')
+    else:
+        request.session['suggested_profile'] = suggestion
+        if suggestion.get('rationale'):
+            messages.info(request, f"AI rationale: {suggestion['rationale']}")
+    return redirect('partner_profile_edit', project_id=project.pk)
+
+
+@login_required
+def monday_import_picker(request, project_id):
+    """Step 1: pick a Monday board to import from."""
+    project = get_object_or_404(Project, pk=project_id)
+    try:
+        boards = monday_client.list_workspace_boards(request.user)
+    except Exception as exc:  # noqa: BLE001
+        messages.error(request, f'Could not load Monday boards: {exc}')
+        boards = []
+    return render(request, 'core/monday_import_picker.html', {
+        'project': project,
+        'boards': boards,
+    })
+
+
+@login_required
+def monday_import_preview(request, project_id, board_id):
+    """Step 2: preview the board + confirm column mapping, then run import."""
+    project = get_object_or_404(Project, pk=project_id)
+
+    if request.method == 'POST':
+        column_map = {
+            key: request.POST.get(f'col_{key}', '').strip()
+            for key in ('email', 'first_name', 'last_name', 'organization', 'role', 'phone', 'specialty')
+        }
+        result = sourcing.import_from_monday_board(
+            project,
+            board_id=board_id,
+            column_map=column_map,
+            user=request.user,
+        )
+        _flash_sourcing_result(request, result)
+        return redirect('lead_review', project_id=project.pk)
+
+    try:
+        payload = monday_client.list_board_items(request.user, board_id, limit=200)
+    except Exception as exc:  # noqa: BLE001
+        messages.error(request, f'Could not load board: {exc}')
+        return redirect('monday_import_picker', project_id=project.pk)
+
+    column_map = monday_client.auto_map_columns(payload.get('columns') or [])
+    return render(request, 'core/monday_import_preview.html', {
+        'project': project,
+        'board': payload.get('board') or {},
+        'columns': payload.get('columns') or [],
+        'items': payload.get('items') or [],
+        'column_map': column_map,
+        'mapped_keys': [
+            ('email', 'Email'),
+            ('first_name', 'First name'),
+            ('last_name', 'Last name'),
+            ('organization', 'Organization'),
+            ('role', 'Role / title'),
+            ('phone', 'Phone'),
+            ('specialty', 'Specialty'),
+        ],
+    })
+
+
+@login_required
+def lead_edit(request, lead_id):
+    lead = get_object_or_404(Lead, pk=lead_id)
+    if request.method == 'POST':
+        form = LeadEditForm(request.POST, instance=lead)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'Updated {lead}.')
+            next_url = request.POST.get('next') or request.GET.get('next')
+            if next_url:
+                return redirect(next_url)
+            return redirect('lead_edit', lead_id=lead.pk)
+    else:
+        form = LeadEditForm(instance=lead)
+    return render(request, 'core/lead_edit.html', {'lead': lead, 'form': form})
+
+
+@login_required
+def lead_conflicts(request, project_id):
+    project = get_object_or_404(Project, pk=project_id)
+    leads = Lead.objects.filter(pending_conflict__isnull=False).order_by('-updated_at')
+    return render(request, 'core/lead_conflicts.html', {'project': project, 'leads': leads})
+
+
+@login_required
+@require_POST
+def lead_resolve_conflict(request, lead_id):
+    lead = get_object_or_404(Lead, pk=lead_id)
+    action = request.POST.get('action', '')
+    if action not in ('merge', 'skip'):
+        messages.error(request, 'Unknown action')
+    else:
+        sourcing.resolve_conflict(lead, action)
+        messages.success(request, f'{lead}: conflict {action}d.')
+    next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'dashboard'
+    return redirect(next_url)
 
 
 @login_required
@@ -131,12 +276,15 @@ def lead_review(request, project_id):
     paginator = Paginator(qs, 50)
     page = paginator.get_page(request.GET.get('page'))
 
+    conflict_count = Lead.objects.filter(pending_conflict__isnull=False).count()
+
     return render(request, 'core/lead_review.html', {
         'project': project,
         'profile': getattr(project, 'partner_profile', None),
         'page': page,
         'apollo_configured': apollo_client.is_configured(),
         'apollo_remaining': apollo_client.budget_remaining() if apollo_client.is_configured() else None,
+        'conflict_count': conflict_count,
         'filters': {
             'source': source_filter,
             'has_email': has_email,
@@ -229,7 +377,7 @@ def lead_import_csv(request, project_id):
             if not any([candidate['first_name'], candidate['last_name'], candidate['email'], candidate['organization']]):
                 errors.append(f'Row {i}: no usable fields')
                 continue
-            _, was_created = sourcing._persist_candidate(  # noqa: SLF001 — internal reuse is deliberate
+            _, was_created, had_conflict = sourcing._persist_candidate(  # noqa: SLF001 — internal reuse is deliberate
                 candidate,
                 default_source=Lead.SOURCE_CSV,
                 default_enrichment=Lead.ENRICHMENT_COMPLETE if candidate['email'] else Lead.ENRICHMENT_NEEDED,
@@ -238,10 +386,12 @@ def lead_import_csv(request, project_id):
                 created += 1
             else:
                 reused += 1
+            if had_conflict:
+                errors.append(f'Row {i}: email matches an existing lead with different name/org — see Conflicts')
 
         messages.success(
             request,
-            f'Imported — {created} new · {reused} reused · {skipped_opt_out} opt-out · {len(errors)} errors',
+            f'Imported — {created} new · {reused} reused · {skipped_opt_out} opt-out · {len(errors)} errors/conflicts',
         )
         return redirect('lead_review', project_id=project.pk)
 

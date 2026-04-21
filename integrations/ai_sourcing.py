@@ -54,6 +54,74 @@ def suggest_support_groups(*, specialty_tags: list[str], geography: dict, limit:
     return _parse_orgs(raw)
 
 
+PROFILE_SYSTEM_PROMPT = (
+    "You propose a partner-outreach targeting profile for a clinical trial. "
+    "Given the project's study materials, you pick a partner type, therapeutic "
+    "specialties (free-text tags that map to NPI taxonomy descriptions), ICD-10 "
+    "codes if clearly inferable, a geography scope, and a realistic target "
+    "population size. You prefer broader targeting unless the materials strongly "
+    "imply a narrow niche. You never invent clinical details not supported by "
+    "the source material.\n\n"
+    "Output strictly as JSON:\n"
+    '{"partner_type": "clinician|support_group|research_coordinator|investigator",\n'
+    ' "specialty_tags": ["...","..."],\n'
+    ' "icd10_codes": ["..."],\n'
+    ' "geography": {"type": "national|state|zip_radius", "states": ["NY"], "zip": "", "radius_miles": 50},\n'
+    ' "target_size": 100,\n'
+    ' "rationale": "one short sentence" }\n'
+    "No markdown. No trailing commentary."
+)
+
+
+def suggest_partner_profile(*, project_name: str, study_code: str, asset_texts: list[str], user=None) -> dict:
+    """Ask Claude to propose a PartnerProfile from project info + uploaded assets."""
+    joined_assets = '\n\n---\n\n'.join(t.strip() for t in asset_texts if t and t.strip()) or '(no assets uploaded)'
+
+    prompt = (
+        f"Project: {project_name}\n"
+        f"Study code: {study_code}\n\n"
+        f"Uploaded study materials (email copy, flyer text, study summary — any subset):\n"
+        f"{joined_assets[:6000]}\n\n"
+        f"Propose a partner-outreach profile that matches what's in these materials. "
+        f"Return JSON only."
+    )
+    raw = AIService.complete(
+        prompt=prompt,
+        system_prompt=PROFILE_SYSTEM_PROMPT,
+        function_name='suggest_partner_profile',
+        user=user,
+        max_tokens=1024,
+    )
+    return _parse_profile(raw)
+
+
+def _parse_profile(raw: str) -> dict:
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if not match:
+            return {}
+        try:
+            data = json.loads(match.group(0))
+        except json.JSONDecodeError:
+            return {}
+
+    if not isinstance(data, dict):
+        return {}
+
+    return {
+        'partner_type': (data.get('partner_type') or '').strip(),
+        'specialty_tags': [t.strip() for t in (data.get('specialty_tags') or []) if t and str(t).strip()],
+        'icd10_codes': [c.strip() for c in (data.get('icd10_codes') or []) if c and str(c).strip()],
+        'geography': data.get('geography') or {'type': 'national'},
+        'target_size': int(data.get('target_size') or 100),
+        'rationale': (data.get('rationale') or '').strip(),
+    }
+
+
 def _format_geography(geography: dict) -> str:
     if not geography:
         return 'United States (national)'

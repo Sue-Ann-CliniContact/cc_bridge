@@ -9,7 +9,35 @@
   Who should this project reach out to? These criteria drive lead sourcing from NPI, Apollo, and AI-suggested directories.
 </p>
 
-<form method="post" class="surface-card mt-8 p-8 space-y-6 max-w-3xl">
+{% if messages %}
+  <div class="mt-4 space-y-2 max-w-3xl">
+    {% for msg in messages %}
+      <div class="rounded-xl px-4 py-3 text-sm
+        {% if msg.level_tag == 'success' %}bg-emerald-50 text-emerald-700
+        {% elif msg.level_tag == 'warning' %}bg-amber-50 text-amber-800
+        {% elif msg.level_tag == 'error' %}bg-red-50 text-red-700
+        {% else %}bg-slate-100 text-slate-700{% endif %}">
+        {{ msg }}
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}
+
+{% if suggestion %}
+  <div class="surface-card mt-4 p-5 max-w-3xl border border-cc-royal/20">
+    <p class="text-xs font-bold uppercase tracking-wider text-cc-royal">AI-suggested targeting</p>
+    <p class="mt-1 text-sm text-cc-ink">Review the pre-filled values below and edit before saving.</p>
+  </div>
+{% endif %}
+
+<form method="post" action="{% url 'partner_profile_suggest' project.pk %}" class="mt-6 max-w-3xl">
+  {% csrf_token %}
+  <button type="submit" class="cc-btn cc-btn-ghost">
+    ✨ Suggest profile from project info (uses uploaded assets)
+  </button>
+</form>
+
+<form method="post" class="surface-card mt-4 p-8 space-y-6 max-w-3xl">
   {% csrf_token %}
 
   <div class="grid gap-4 md:grid-cols-2">

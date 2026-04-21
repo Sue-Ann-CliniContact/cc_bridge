@@ -2,7 +2,7 @@ import json
 
 from django import forms
 
-from .models import PartnerProfile, Project, StudyAsset
+from .models import Lead, PartnerProfile, Project, StudyAsset
 
 
 class ProjectForm(forms.ModelForm):
@@ -107,4 +107,28 @@ class StudyAssetForm(forms.ModelForm):
             'subject': forms.TextInput(attrs={'class': 'cc-input', 'placeholder': 'Email subject (email assets only)'}),
             'content_text': forms.Textarea(attrs={'class': 'cc-input', 'rows': 6, 'placeholder': 'Email copy, study summary, or text brief'}),
             'content_url': forms.URLInput(attrs={'class': 'cc-input', 'placeholder': 'https://... (landing-page URL)'}),
+        }
+
+
+class LeadEditForm(forms.ModelForm):
+    """Manual enrichment / edit form for a Lead — used when Apollo can't find an email."""
+
+    class Meta:
+        model = Lead
+        fields = [
+            'first_name', 'last_name', 'email', 'phone', 'npi',
+            'organization', 'role', 'specialty', 'enrichment_status',
+            'global_opt_out', 'do_not_contact_reason',
+        ]
+        widgets = {
+            'first_name': forms.TextInput(attrs={'class': 'cc-input'}),
+            'last_name': forms.TextInput(attrs={'class': 'cc-input'}),
+            'email': forms.EmailInput(attrs={'class': 'cc-input'}),
+            'phone': forms.TextInput(attrs={'class': 'cc-input'}),
+            'npi': forms.TextInput(attrs={'class': 'cc-input'}),
+            'organization': forms.TextInput(attrs={'class': 'cc-input'}),
+            'role': forms.TextInput(attrs={'class': 'cc-input'}),
+            'specialty': forms.TextInput(attrs={'class': 'cc-input'}),
+            'enrichment_status': forms.Select(attrs={'class': 'cc-input'}),
+            'do_not_contact_reason': forms.TextInput(attrs={'class': 'cc-input'}),
         }

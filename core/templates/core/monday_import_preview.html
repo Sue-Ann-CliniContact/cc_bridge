@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Preview {{ board.name }} · Import{% endblock %}
+
+{% block content %}
+<a href="{% url 'monday_import_picker' project.pk %}" class="text-sm text-cc-muted hover:text-cc-royal">← Pick a different board</a>
+
+<h1 class="mt-3 text-3xl font-black tracking-tight text-cc-ink">{{ board.name }}</h1>
+<p class="mt-2 text-sm text-cc-muted">{{ items|length }} item{{ items|length|pluralize }} on this board. Map the columns below, then import.</p>
+
+<form method="post" class="mt-6">
+  {% csrf_token %}
+  <div class="surface-card p-6">
+    <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Column mapping</h2>
+    <p class="mt-1 text-xs text-cc-muted">We guessed based on column titles. Override any field below if needed. Leave blank to skip that field.</p>
+
+    <div class="mt-4 grid gap-4 md:grid-cols-2">
+      {% for key, label in mapped_keys %}
+        <div>
+          <label class="cc-label">{{ label }}</label>
+          <select name="col_{{ key }}" class="cc-input">
+            <option value="">— Not in this board —</option>
+            {% for col in columns %}
+              <option value="{{ col.id }}" {% if column_map|default_if_none:''|stringformat:'s' and column_map|default:''|stringformat:'s' == col.id %}selected{% endif %}>
+                {{ col.title }} ({{ col.type }})
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Preview -->
+  <div class="surface-card mt-4 p-6 overflow-x-auto">
+    <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Sample (first 10 items)</h2>
+    <table class="w-full mt-4 text-sm">
+      <thead class="text-xs uppercase tracking-wider text-cc-muted">
+        <tr>
+          <th class="px-3 py-2 text-left">Monday item</th>
+          {% for col in columns %}
+            <th class="px-3 py-2 text-left">{{ col.title }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for item in items|slice:":10" %}
+          <tr>
+            <td class="px-3 py-2 font-medium text-cc-ink">{{ item.name }}</td>
+            {% for cv in item.column_values %}
+              <td class="px-3 py-2 text-cc-muted">{{ cv.text|default:"" }}</td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="mt-4 flex justify-end gap-3">
+    <a href="{% url 'monday_import_picker' project.pk %}" class="cc-btn cc-btn-ghost">Cancel</a>
+    <button type="submit" class="cc-btn cc-btn-primary">Import {{ items|length }} item{{ items|length|pluralize }}</button>
+  </div>
+</form>
+
+<!-- Override auto-map via initial-selected options (rendered post-table for correct select state) -->
+<script>
+(function(){
+  const map = {{ column_map|default:'{}'|safe }};
+  for (const key in map) {
+    const el = document.querySelector('select[name="col_' + key + '"]');
+    if (el && map[key]) el.value = map[key];
+  }
+})();
+</script>
+{% endblock %}

@@ -136,6 +136,7 @@ def _normalize(item: dict) -> dict:
     first = basic.get('first_name') or ''
     last = basic.get('last_name') or ''
     org = basic.get('organization_name') or ''
+    taxonomy_code = (primary_tax.get('code') or '').strip()
 
     return {
         'npi': npi,
@@ -144,12 +145,25 @@ def _normalize(item: dict) -> dict:
         'organization': org,
         'role': (basic.get('credential') or '').strip(),
         'specialty': (primary_tax.get('desc') or '').strip(),
+        'taxonomy_code': taxonomy_code,
         'geography': {
             'state': (practice.get('state') or '').strip(),
             'postal_code': (practice.get('postal_code') or '').strip()[:5],
             'city': (practice.get('city') or '').strip().title(),
+            'taxonomy_code': taxonomy_code,
         },
         'phone': (practice.get('telephone_number') or '').strip(),
         # NPI registry doesn't include email
         'email': None,
     }
+
+
+# CMS taxonomy codes starting with 207 or 208 are Allopathic & Osteopathic Physicians
+# (MDs and DOs across all specialties). Everything else is NPs, PAs, nurses,
+# social workers, therapists, etc.
+PHYSICIAN_TAXONOMY_PREFIXES = ('207', '208')
+
+
+def is_physician(candidate: dict) -> bool:
+    code = (candidate.get('taxonomy_code') or '').strip()
+    return any(code.startswith(p) for p in PHYSICIAN_TAXONOMY_PREFIXES)

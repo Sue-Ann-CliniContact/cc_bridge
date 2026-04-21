@@ -134,13 +134,37 @@ def extract_contacts_from_url(*, url: str, org_name: str, user=None) -> list[dic
     from django.utils.html import strip_tags
 
     try:
+        # Browser-style headers — some sites reject the default requests UA outright.
         r = requests.get(
             url,
             timeout=15,
-            headers={'User-Agent': 'Mozilla/5.0 CliniContact-Bridge/1.0'},
+            headers={
+                'User-Agent': (
+                    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+                    'AppleWebKit/537.36 (KHTML, like Gecko) '
+                    'Chrome/122.0.0.0 Safari/537.36'
+                ),
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Upgrade-Insecure-Requests': '1',
+            },
             allow_redirects=True,
         )
         r.raise_for_status()
+    except requests.HTTPError as exc:
+        status = getattr(exc.response, 'status_code', None)
+        if status in (401, 403, 429):
+            raise RuntimeError(
+                f'{url} blocked the fetch (HTTP {status}). This site rejects crawler requests. '
+                f'Open it manually and add a contact via "Edit lead."'
+            ) from exc
+        raise RuntimeError(f'Could not load page (HTTP {status}): {exc}') from exc
     except Exception as exc:  # noqa: BLE001
         log.warning('Contact extract: failed to fetch %s: %s', url, exc)
         raise RuntimeError(f'Could not load page ({exc})') from exc

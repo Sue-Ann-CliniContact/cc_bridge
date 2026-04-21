@@ -167,6 +167,16 @@ def source_from_npi(project: Project, *, limit: int = 100) -> SourcingResult:
             f"'Family Medicine', 'Pediatrics', etc. — not generic terms like 'clinical research'."
         )
 
+    # Physician filter: for clinician / investigator partner types, only keep
+    # MDs/DOs (taxonomy codes 207X / 208X). Otherwise NPs, RNs, PAs, social
+    # workers, chaplains, etc. flood the list.
+    if profile.partner_type in (PartnerProfile.PARTNER_CLINICIAN, PartnerProfile.PARTNER_INVESTIGATOR):
+        before = len(raw_candidates)
+        raw_candidates = [c for c in raw_candidates if npi.is_physician(c)]
+        filtered_out = before - len(raw_candidates)
+        if filtered_out:
+            result.errors.append(f'Filtered {filtered_out} non-physician providers (NPs, PAs, RNs, etc.).')
+
     result.candidates_found = len(raw_candidates)
     # NPI rarely returns email; mark new leads as needing enrichment
     for cand in raw_candidates:

@@ -8,7 +8,11 @@ taxonomy.description (e.g. "oncology" matches "Medical Oncology",
 """
 from __future__ import annotations
 
+import logging
+
 import requests
+
+log = logging.getLogger(__name__)
 
 NPI_API_URL = 'https://npiregistry.cms.hhs.gov/api/'
 API_VERSION = '2.1'
@@ -54,12 +58,7 @@ def search(
     if last_name:
         params['last_name'] = last_name
 
-    # National + specialty-only: CMS sometimes 400s. Add a permissive last_name
-    # wildcard so the filter set is accepted without narrowing the result set.
-    if taxonomy and not (state or postal_code or first_name or last_name):
-        params['last_name'] = '*'
-        params['use_first_name_alias'] = 'true'
-
+    log.info('NPI search params: %s', {k: v for k, v in params.items() if k != 'version'})
     r = requests.get(NPI_API_URL, params=params, timeout=20)
     if r.status_code >= 400:
         try:
@@ -67,9 +66,17 @@ def search(
             messages = '; '.join(e.get('description', str(e)) for e in errors) if errors else r.text[:300]
         except Exception:  # noqa: BLE001
             messages = r.text[:300]
+        log.warning('NPI %s error: %s', r.status_code, messages)
         raise RuntimeError(f'NPI API {r.status_code}: {messages}')
     data = r.json() or {}
+    # CMS sometimes returns 200 with an Errors field for malformed queries
+    api_errors = data.get('Errors') or []
+    if api_errors:
+        messages = '; '.join(e.get('description', str(e)) for e in api_errors)
+        log.warning('NPI 200-with-Errors: %s', messages)
+        raise RuntimeError(f'NPI API: {messages}')
     results = data.get('results') or []
+    log.info('NPI returned %d results (result_count=%s)', len(results), data.get('result_count'))
     return [_normalize(item) for item in results]
 
 

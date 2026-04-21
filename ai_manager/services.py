@@ -94,6 +94,66 @@ class AIService:
             output_tokens=getattr(resp.usage, 'output_tokens', 0) or 0,
         )
 
+    @classmethod
+    def call_structured(
+        cls,
+        *,
+        prompt: str,
+        system_prompt: str | None = None,
+        tool_name: str,
+        tool_description: str,
+        tool_schema: dict,
+        function_name: str = 'structured',
+        user=None,
+        max_tokens: int = 2048,
+    ) -> dict:
+        """Force Claude to produce structured JSON via tool-use. Returns the tool input dict.
+        Much more reliable than asking for JSON in prose."""
+        from anthropic import Anthropic
+
+        provider_row, provider_type, api_key, model_name = cls._resolve_provider()
+        if not api_key:
+            raise RuntimeError(f'No API key configured for provider {provider_type}')
+        if provider_type != AIProvider.PROVIDER_ANTHROPIC:
+            raise NotImplementedError('Structured output currently only supported for Anthropic')
+
+        client = Anthropic(api_key=api_key)
+        kwargs = {
+            'model': model_name,
+            'max_tokens': max_tokens,
+            'messages': [{'role': 'user', 'content': prompt}],
+            'tools': [{
+                'name': tool_name,
+                'description': tool_description,
+                'input_schema': tool_schema,
+            }],
+            'tool_choice': {'type': 'tool', 'name': tool_name},
+        }
+        if system_prompt:
+            kwargs['system'] = system_prompt
+
+        resp = client.messages.create(**kwargs)
+
+        tool_input: dict = {}
+        for block in resp.content:
+            if getattr(block, 'type', None) == 'tool_use' and getattr(block, 'name', None) == tool_name:
+                tool_input = dict(block.input or {})
+                break
+
+        input_tokens = getattr(resp.usage, 'input_tokens', 0) or 0
+        output_tokens = getattr(resp.usage, 'output_tokens', 0) or 0
+        AIUsageLog.objects.create(
+            user=user,
+            provider=provider_row,
+            function_name=function_name,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost=_estimate_cost(provider_type, input_tokens, output_tokens),
+            prompt=prompt[:2000],
+            response=str(tool_input)[:4000],
+        )
+        return tool_input
+
 
 def _env_key_for(provider_type: str) -> str:
     if provider_type == AIProvider.PROVIDER_ANTHROPIC:

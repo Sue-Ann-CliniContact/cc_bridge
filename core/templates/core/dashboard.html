@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · Bridge{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-8">
+  <div>
+    <h1 class="text-3xl font-black tracking-tight text-cc-ink">Projects</h1>
+    <p class="mt-1 text-sm text-cc-muted">Partner outreach campaigns across your studies.</p>
+  </div>
+  <a href="{% url 'project_create' %}" class="cc-btn cc-btn-primary">
+    + New Project
+  </a>
+</div>
+
+{% if projects %}
+  <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+    {% for project in projects %}
+      <a href="{% url 'project_detail' project.pk %}" class="surface-card p-6 hover:shadow-lg transition-shadow block">
+        <div class="flex items-start justify-between">
+          <div>
+            <p class="text-xs font-bold uppercase tracking-wider text-cc-muted">{{ project.study_code }}</p>
+            <h2 class="mt-1 text-lg font-bold text-cc-ink">{{ project.name }}</h2>
+          </div>
+          <span class="cc-chip {% if project.status == 'active' %}ok{% elif project.status == 'draft' %}muted{% endif %}">
+            {{ project.get_status_display }}
+          </span>
+        </div>
+        <div class="mt-4 flex items-center gap-4 text-xs text-cc-muted">
+          <span>{{ project.assets.count }} asset{{ project.assets.count|pluralize }}</span>
+          <span>·</span>
+          <span>{{ project.project_leads.count }} lead{{ project.project_leads.count|pluralize }}</span>
+        </div>
+      </a>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="surface-card p-12 text-center">
+    <h2 class="text-lg font-bold text-cc-ink">No projects yet</h2>
+    <p class="mt-2 text-sm text-cc-muted">Create your first outreach project to get started.</p>
+    <a href="{% url 'project_create' %}" class="cc-btn cc-btn-primary mt-6">Create a project</a>
+  </div>
+{% endif %}
+{% endblock %}

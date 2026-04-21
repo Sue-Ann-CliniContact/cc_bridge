@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}{{ project.study_code }} · Bridge{% endblock %}
+
+{% block content %}
+<a href="{% url 'dashboard' %}" class="text-sm text-cc-muted hover:text-cc-royal">← Back to projects</a>
+
+<div class="mt-3 flex items-start justify-between">
+  <div>
+    <p class="text-xs font-bold uppercase tracking-wider text-cc-muted">{{ project.study_code }}</p>
+    <h1 class="mt-1 text-3xl font-black tracking-tight text-cc-ink">{{ project.name }}</h1>
+  </div>
+  <span class="cc-chip {% if project.status == 'active' %}ok{% elif project.status == 'draft' %}muted{% endif %}">
+    {{ project.get_status_display }}
+  </span>
+</div>
+
+<div class="grid gap-6 lg:grid-cols-3 mt-8">
+  <!-- Metadata -->
+  <section class="surface-card p-6 lg:col-span-1">
+    <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Details</h2>
+    <dl class="mt-4 space-y-3 text-sm">
+      <div><dt class="text-cc-muted">Horizon study ID</dt><dd class="text-cc-ink">{{ project.horizon_study_id|default:"—" }}</dd></div>
+      <div><dt class="text-cc-muted">Monday board</dt><dd class="text-cc-ink">{{ project.monday_board_id|default:"Not yet provisioned" }}</dd></div>
+      <div><dt class="text-cc-muted">Created by</dt><dd class="text-cc-ink">{{ project.created_by.get_full_name|default:project.created_by.username|default:"—" }}</dd></div>
+      <div><dt class="text-cc-muted">Created</dt><dd class="text-cc-ink">{{ project.created_at|date:"M j, Y" }}</dd></div>
+    </dl>
+    <div class="mt-6 pt-6 border-t border-slate-100">
+      <button id="btnTestInstantly" type="button" class="cc-btn cc-btn-ghost w-full justify-center">
+        Test Instantly connection
+      </button>
+      <div id="instantlyResult" class="mt-3 text-xs text-cc-muted"></div>
+    </div>
+  </section>
+
+  <!-- Assets -->
+  <section class="surface-card p-6 lg:col-span-2">
+    <div class="flex items-center justify-between">
+      <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Study assets</h2>
+      <span class="cc-chip muted">{{ assets.count }}</span>
+    </div>
+
+    {% if assets %}
+      <ul class="mt-4 divide-y divide-slate-100">
+        {% for asset in assets %}
+          <li class="py-3 flex items-start justify-between gap-4">
+            <div class="min-w-0">
+              <p class="text-sm font-semibold text-cc-ink">{{ asset.get_type_display }}{% if asset.subject %} — {{ asset.subject }}{% endif %}</p>
+              {% if asset.content_text %}<p class="mt-1 text-xs text-cc-muted line-clamp-2">{{ asset.content_text|truncatewords:30 }}</p>{% endif %}
+              {% if asset.content_url %}<a href="{{ asset.content_url }}" target="_blank" class="mt-1 inline-block text-xs text-cc-royal hover:underline break-all">{{ asset.content_url }}</a>{% endif %}
+              {% if asset.content_file %}<a href="{{ asset.content_file.url }}" target="_blank" class="mt-1 inline-block text-xs text-cc-royal hover:underline">{{ asset.content_file.name|slice:"20:" }}</a>{% endif %}
+            </div>
+            <div class="flex flex-col items-end gap-2 shrink-0">
+              {% if asset.is_approved %}
+                <span class="cc-chip ok">Approved</span>
+              {% else %}
+                <form method="post" action="{% url 'asset_approve' asset.pk %}">{% csrf_token %}
+                  <button class="cc-btn cc-btn-ghost text-xs">Approve</button>
+                </form>
+              {% endif %}
+              <span class="text-[11px] text-cc-muted">{{ asset.created_at|date:"M j" }}</span>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="mt-4 text-sm text-cc-muted">No assets uploaded yet. Add the approved email copy, flyer, and landing page URL below.</p>
+    {% endif %}
+
+    <form method="post" enctype="multipart/form-data" action="{% url 'asset_upload' project.pk %}" class="mt-6 pt-6 border-t border-slate-100 space-y-4">
+      {% csrf_token %}
+      <div class="grid gap-3 md:grid-cols-2">
+        <div>
+          <label class="cc-label">Asset type</label>
+          {{ asset_form.type }}
+        </div>
+        <div>
+          <label class="cc-label">Email subject (email only)</label>
+          {{ asset_form.subject }}
+        </div>
+      </div>
+      <div>
+        <label class="cc-label">Text content</label>
+        {{ asset_form.content_text }}
+      </div>
+      <div class="grid gap-3 md:grid-cols-2">
+        <div>
+          <label class="cc-label">Landing page URL</label>
+          {{ asset_form.content_url }}
+        </div>
+        <div>
+          <label class="cc-label">File (flyer)</label>
+          {{ asset_form.content_file }}
+        </div>
+      </div>
+      <div class="flex justify-end">
+        <button type="submit" class="cc-btn cc-btn-primary">Save asset</button>
+      </div>
+    </form>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('btnTestInstantly').addEventListener('click', async () => {
+  const out = document.getElementById('instantlyResult');
+  out.textContent = 'Testing...';
+  try {
+    const res = await fetch("{% url 'test_instantly' %}", { credentials: 'same-origin' });
+    const data = await res.json();
+    if (data.ok) {
+      out.innerHTML = `<span class="cc-chip ok">Connected</span> ${data.campaigns_count} campaign${data.campaigns_count === 1 ? '' : 's'} visible`;
+    } else {
+      out.innerHTML = `<span class="cc-chip warn">Error</span> ${data.error}`;
+    }
+  } catch (e) {
+    out.innerHTML = `<span class="cc-chip warn">Request failed</span> ${e}`;
+  }
+});
+</script>
+{% endblock %}

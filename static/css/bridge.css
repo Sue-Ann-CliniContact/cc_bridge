@@ -1,0 +1,97 @@
+/* CliniContact Bridge — design tokens + shared components
+   Palette sourced from Vision so product suite stays visually consistent. */
+:root {
+    --cc-navy: #0c1b46;
+    --cc-royal: #2550e6;
+    --cc-sky: #5ebeff;
+    --cc-mint: #e9fbf4;
+    --cc-ink: #14213d;
+    --cc-muted: #62708b;
+    --cc-line: rgba(19, 38, 86, 0.12);
+}
+
+.text-cc-royal { color: var(--cc-royal); }
+.text-cc-navy  { color: var(--cc-navy); }
+.text-cc-ink   { color: var(--cc-ink); }
+.text-cc-muted { color: var(--cc-muted); }
+.bg-cc-mint    { background-color: var(--cc-mint); }
+.bg-cc-navy    { background-color: var(--cc-navy); }
+.bg-cc-royal   { background-color: var(--cc-royal); }
+
+.surface-card {
+    background: #fff;
+    border: 1px solid var(--cc-line);
+    border-radius: 18px;
+    box-shadow: 0 1px 2px rgba(19, 38, 86, 0.04), 0 8px 24px rgba(19, 38, 86, 0.04);
+}
+
+.glass-card {
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: saturate(160%) blur(14px);
+    border: 1px solid var(--cc-line);
+    border-radius: 28px;
+}
+
+.cc-input {
+    width: 100%;
+    border-radius: 14px;
+    border: 1px solid #e2e8f0;
+    background-color: #f8fafc;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    color: #0f172a;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+.cc-input:focus {
+    outline: none;
+    border-color: var(--cc-royal);
+    box-shadow: 0 0 0 4px rgba(37, 80, 230, 0.15);
+    background-color: #fff;
+}
+
+.cc-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-radius: 14px;
+    padding: 0.625rem 1.125rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    transition: background-color 0.15s, transform 0.05s;
+}
+.cc-btn-primary {
+    background-color: var(--cc-royal);
+    color: #fff;
+}
+.cc-btn-primary:hover { background-color: #1e42bf; }
+.cc-btn-primary:active { transform: translateY(1px); }
+.cc-btn-ghost {
+    background-color: #f1f5f9;
+    color: #0f172a;
+}
+.cc-btn-ghost:hover { background-color: #e2e8f0; }
+
+.cc-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 999px;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: var(--cc-mint);
+    color: var(--cc-navy);
+}
+.cc-chip.muted { background: #eef2f7; color: var(--cc-muted); }
+.cc-chip.warn  { background: #fef3c7; color: #92400e; }
+.cc-chip.ok    { background: #dcfce7; color: #065f46; }
+
+.cc-label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--cc-muted);
+    margin-bottom: 0.5rem;
+}

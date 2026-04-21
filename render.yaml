@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: cc-bridge
+    runtime: python
+    plan: starter
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn bridge.wsgi:application"
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: DEBUG
+        value: "False"
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: ALLOWED_HOSTS
+        sync: false
+      - key: DB_INTERNAL
+        sync: false
+      - key: MONDAY_CLIENT_ID
+        sync: false
+      - key: MONDAY_CLIENT_SECRET
+        sync: false
+      - key: MONDAY_REDIRECT_URI
+        sync: false
+      - key: MONDAY_WORKSPACE_ID
+        sync: false
+      - key: INSTANTLY_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: APOLLO_API_KEY
+        sync: false
+      - key: APOLLO_MONTHLY_BUDGET_CREDITS
+        value: "1000"
+      - key: APP_BASE_URL
+        sync: false

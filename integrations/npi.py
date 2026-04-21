@@ -48,7 +48,12 @@ def search(
         'enumeration_type': enumeration_type,
     }
     if taxonomy:
-        params['taxonomy_description'] = taxonomy
+        # CMS NPI does exact substring match only when wildcards are present — wrap
+        # short terms so e.g. "oncology" matches "Medical Oncology", "Hematology/Oncology", etc.
+        term = taxonomy.strip()
+        if '*' not in term:
+            term = f'*{term}*'
+        params['taxonomy_description'] = term
     if state:
         params['state'] = state
     if postal_code:

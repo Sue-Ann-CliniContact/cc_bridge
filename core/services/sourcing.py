@@ -476,6 +476,15 @@ def find_org_contacts_via_web(org_lead: Lead, *, user=None) -> dict:
 
     contacts = result.get('contacts') or []
     fallbacks = result.get('fallback_emails') or []
+    primary_domain = result.get('primary_domain') or ''
+
+    # Save the org's primary domain onto the org_lead for downstream tools.
+    if primary_domain:
+        org_geo = org_lead.geography or {}
+        if not org_geo.get('domain'):
+            org_geo['domain'] = primary_domain
+            org_lead.geography = org_geo
+            org_lead.save(update_fields=['geography', 'updated_at'])
 
     # Validate every source URL returned by Claude (HEAD-check in parallel).
     all_source_urls = [c.get('source_url') for c in contacts if c.get('source_url')]
@@ -546,6 +555,7 @@ def find_org_contacts_via_web(org_lead: Lead, *, user=None) -> dict:
         'contacts_count': len(contacts),
         'fallback_count': len(fallbacks),
         'broken_urls_dropped': broken_url_count,
+        'primary_domain': primary_domain,
     }
 
 
@@ -563,6 +573,7 @@ def enrich_clinician_via_web(lead: Lead, *, user=None) -> dict:
             specialty=lead.specialty,
             city=geo.get('city', ''),
             state=geo.get('state', ''),
+            postal_code=geo.get('postal_code', ''),
             npi=lead.npi or '',
             user=user,
         )
@@ -588,6 +599,13 @@ def enrich_clinician_via_web(lead: Lead, *, user=None) -> dict:
     if result.get('linkedin_url') and not lead.linkedin_url:
         lead.linkedin_url = result['linkedin_url']
         update_fields.add('linkedin_url')
+    # Save the institution domain into geography — feeds Apollo / Hunter.io later.
+    if result.get('organization_domain'):
+        new_geo = lead.geography or {}
+        if not new_geo.get('domain'):
+            new_geo['domain'] = result['organization_domain']
+            lead.geography = new_geo
+            update_fields.add('geography')
 
     lead.enrichment_status = Lead.ENRICHMENT_COMPLETE if lead.email else Lead.ENRICHMENT_FAILED
     update_fields.add('enrichment_status')
@@ -606,20 +624,33 @@ def enrich_clinician_via_web(lead: Lead, *, user=None) -> dict:
 
 
 def enrich_lead_with_apollo(lead: Lead, *, user=None) -> dict:
-    """Call Apollo people/match to fill in email/phone/title on a Lead."""
+    """Call Apollo people/match to fill in email/phone/title + save full payload
+    (headline, seniority, employment history, org details, social URLs) on the Lead.
+    Passes city/state/title/linkedin_url as disambiguation hints so we don't get
+    the "3 John Smiths" problem.
+    """
     if not apollo.is_configured():
         return {'ok': False, 'error': 'Apollo not configured'}
+    geo = lead.geography or {}
     try:
         match = apollo.enrich_person(
             first_name=lead.first_name,
             last_name=lead.last_name,
             organization=lead.organization,
+            domain=geo.get('domain', ''),  # captured earlier by web search if available
+            linkedin_url=lead.linkedin_url,
+            title=lead.role,
+            city=geo.get('city', ''),
+            state=geo.get('state', ''),
             user=user,
         )
     except Exception as exc:  # noqa: BLE001
         return {'ok': False, 'error': str(exc)}
 
-    updated_fields = ['enrichment_status', 'updated_at']
+    updated_fields = ['enrichment_status', 'apollo_data', 'updated_at']
+    # Always persist the full Apollo payload for future reference.
+    lead.apollo_data = match
+
     if match.get('email') and not lead.email:
         email = match['email'].strip().lower()
         if OptOut.objects.filter(email=email).exists():
@@ -635,6 +666,19 @@ def enrich_lead_with_apollo(lead: Lead, *, user=None) -> dict:
     if match.get('linkedin_url') and not lead.linkedin_url:
         lead.linkedin_url = match['linkedin_url']
         updated_fields.append('linkedin_url')
+    # Fill organization if blank — Apollo often has the employer we're missing
+    apollo_org = (match.get('organization') or {}).get('name', '')
+    if apollo_org and not lead.organization:
+        lead.organization = apollo_org
+        updated_fields.append('organization')
+    # Fill city/state in geography if blank
+    if match.get('city') and not (lead.geography or {}).get('city'):
+        lead.geography = {**(lead.geography or {}), 'city': match['city']}
+        updated_fields.append('geography')
+    if match.get('state') and not (lead.geography or {}).get('state'):
+        lead.geography = {**(lead.geography or {}), 'state': match['state']}
+        if 'geography' not in updated_fields:
+            updated_fields.append('geography')
 
     lead.enrichment_status = Lead.ENRICHMENT_COMPLETE if lead.email else Lead.ENRICHMENT_FAILED
     lead.save(update_fields=list(set(updated_fields)))

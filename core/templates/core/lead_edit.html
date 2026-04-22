@@ -31,6 +31,39 @@
   </div>
 {% endif %}
 
+{% if lead.apollo_data %}
+  <div class="surface-card mt-6 p-6 max-w-3xl">
+    <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Apollo data (read-only)</h2>
+    <p class="mt-1 text-xs text-cc-muted">Full payload from the last Apollo match. Not editable — re-run enrich to refresh.</p>
+    <dl class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1 text-sm">
+      {% if lead.apollo_data.headline %}<div class="md:col-span-2"><dt class="inline text-cc-muted">Headline:</dt> <dd class="inline text-cc-ink">{{ lead.apollo_data.headline }}</dd></div>{% endif %}
+      {% if lead.apollo_data.title %}<div><dt class="inline text-cc-muted">Title:</dt> <dd class="inline text-cc-ink">{{ lead.apollo_data.title }}</dd></div>{% endif %}
+      {% if lead.apollo_data.seniority %}<div><dt class="inline text-cc-muted">Seniority:</dt> <dd class="inline text-cc-ink">{{ lead.apollo_data.seniority }}</dd></div>{% endif %}
+      {% if lead.apollo_data.email_status %}<div><dt class="inline text-cc-muted">Email status:</dt> <dd class="inline text-cc-ink">{{ lead.apollo_data.email_status }}</dd></div>{% endif %}
+      {% if lead.apollo_data.city or lead.apollo_data.state %}<div><dt class="inline text-cc-muted">Apollo city/state:</dt> <dd class="inline text-cc-ink">{{ lead.apollo_data.city }}{% if lead.apollo_data.city and lead.apollo_data.state %}, {% endif %}{{ lead.apollo_data.state }}</dd></div>{% endif %}
+      {% if lead.apollo_data.organization.name %}<div class="md:col-span-2"><dt class="inline text-cc-muted">Organization:</dt> <dd class="inline text-cc-ink">{{ lead.apollo_data.organization.name }}{% if lead.apollo_data.organization.industry %} · {{ lead.apollo_data.organization.industry }}{% endif %}{% if lead.apollo_data.organization.estimated_num_employees %} · ~{{ lead.apollo_data.organization.estimated_num_employees }} employees{% endif %}</dd></div>{% endif %}
+      {% if lead.apollo_data.organization.primary_domain %}<div><dt class="inline text-cc-muted">Org domain:</dt> <dd class="inline"><a href="https://{{ lead.apollo_data.organization.primary_domain }}" target="_blank" class="text-cc-royal hover:underline">{{ lead.apollo_data.organization.primary_domain }}</a></dd></div>{% endif %}
+      {% if lead.apollo_data.organization.website_url %}<div><dt class="inline text-cc-muted">Org site:</dt> <dd class="inline"><a href="{{ lead.apollo_data.organization.website_url }}" target="_blank" class="text-cc-royal hover:underline">↗ site</a></dd></div>{% endif %}
+      {% if lead.apollo_data.twitter_url %}<div><dt class="inline text-cc-muted">Twitter:</dt> <dd class="inline"><a href="{{ lead.apollo_data.twitter_url }}" target="_blank" class="text-cc-royal hover:underline">↗</a></dd></div>{% endif %}
+      {% if lead.apollo_data.facebook_url %}<div><dt class="inline text-cc-muted">Facebook:</dt> <dd class="inline"><a href="{{ lead.apollo_data.facebook_url }}" target="_blank" class="text-cc-royal hover:underline">↗</a></dd></div>{% endif %}
+    </dl>
+    {% if lead.apollo_data.employment_history %}
+      <div class="mt-3 pt-3 border-t border-slate-100 text-xs">
+        <p class="font-semibold text-cc-muted">Employment history:</p>
+        <ul class="mt-1 space-y-0.5 text-cc-muted">
+          {% for job in lead.apollo_data.employment_history %}
+            <li>
+              {% if job.current %}<span class="font-semibold text-cc-ink">Current:</span> {% endif %}
+              {{ job.title }} at {{ job.organization_name }}
+              {% if job.start_date %} <span class="text-cc-muted/70">({{ job.start_date|slice:":7" }}{% if job.end_date %} – {{ job.end_date|slice:":7" }}{% endif %})</span>{% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+  </div>
+{% endif %}
+
 {% if lead.geography %}
   <div class="surface-card mt-6 p-6 max-w-3xl">
     <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Source data (read-only)</h2>

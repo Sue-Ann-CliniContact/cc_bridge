@@ -181,6 +181,12 @@ class Lead(models.Model):
         help_text='Set when an import matched this lead by email but had different name/org. '
                   'Resolve by merging or dismissing in the lead review UI.',
     )
+    apollo_data = models.JSONField(
+        null=True,
+        blank=True,
+        help_text='Full Apollo people/match response: headline, seniority, employment_history, '
+                  'organization details, social URLs, photo. Used for lead context in review/edit.',
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -526,6 +526,10 @@ ORG_CONTACTS_WEB_SYSTEM_PROMPT = (
 ORG_CONTACTS_WEB_TOOL_SCHEMA = {
     'type': 'object',
     'properties': {
+        'primary_domain': {
+            'type': 'string',
+            'description': "The org's main web domain (e.g. 'everylifefoundation.org'). Used by downstream tools to find all emails at this domain.",
+        },
         'contacts': {
             'type': 'array',
             'description': 'Named staff suitable for outreach',
@@ -620,29 +624,38 @@ def find_org_contacts_via_web(
             'source_url': (fb.get('source_url') or '').strip(),
         })
 
+    primary_domain = (result.get('primary_domain') or '').strip().lower()
+    if primary_domain.startswith('http'):
+        from urllib.parse import urlparse
+        primary_domain = urlparse(primary_domain).netloc or primary_domain
+    primary_domain = primary_domain.lstrip('www.').rstrip('/')
+
     log.info(
-        'find_org_contacts_via_web: org=%r → %d contacts, %d fallback emails',
-        org_name, len(contacts), len(fallbacks),
+        'find_org_contacts_via_web: org=%r → %d contacts, %d fallback emails, domain=%r',
+        org_name, len(contacts), len(fallbacks), primary_domain,
     )
-    return {'contacts': contacts, 'fallback_emails': fallbacks}
+    return {'contacts': contacts, 'fallback_emails': fallbacks, 'primary_domain': primary_domain}
 
 
 CLINICIAN_EMAIL_WEB_SYSTEM_PROMPT = (
-    "You find the professional work email for a specific US-licensed clinician "
-    "using the web_search tool. Search hospital / health-system / academic "
-    "faculty / practice directories for the clinician's profile, then extract "
-    "their verified email. Also search LinkedIn (site:linkedin.com/in) to "
-    "confirm their current affiliation and capture the profile URL — LinkedIn "
-    "profiles are very reliable for 'where do they work now.'\n\n"
+    "You research a specific US-licensed clinician to find their professional "
+    "work email AND — equally importantly — their current institution's "
+    "primary domain (e.g. 'mountsinai.org', 'mskcc.org'). The institution "
+    "domain is almost as valuable as the email because it unlocks downstream "
+    "tooling (Apollo domain match, Hunter.io's find-all-emails-at-domain).\n\n"
+    "Priority order of searches (use up to 10):\n"
+    "  1. Google the name + specialty + city/state — top result is usually the "
+    "institution profile page.\n"
+    "  2. site:linkedin.com/in {name} {city} — confirms current employer.\n"
+    "  3. The institution's own faculty / 'find a doctor' page to capture the "
+    "canonical affiliation + domain.\n"
+    "  4. AMA / Doximity / US News doctor profile as fallback sources.\n\n"
     "Do NOT guess emails from patterns (firstname.lastname@domain). Only return "
-    "an email if it is explicitly posted on the clinician's institution website "
-    "or a reputable professional directory (AMA, Doximity profile, medical-"
-    "school faculty page). Empty email is better than wrong email.\n\n"
-    "If no email is publicly posted, return empty email but include the most "
-    "likely source_url where an operator could find contact info manually (e.g. "
-    "the clinician's institution profile page, or the department contact page). "
-    "Always include linkedin_url when you find a matching LinkedIn profile — "
-    "that alone is high-value even without an email."
+    "an email if it is explicitly posted on the institution website or a "
+    "reputable directory. Empty email is better than wrong email.\n\n"
+    "ALWAYS return organization_domain when you can identify the current "
+    "employer's website — even if no email is posted, the domain unlocks other "
+    "tools. ALWAYS return linkedin_url when you find a matching profile."
 )
 
 CLINICIAN_EMAIL_WEB_TOOL_SCHEMA = {
@@ -650,8 +663,12 @@ CLINICIAN_EMAIL_WEB_TOOL_SCHEMA = {
     'properties': {
         'email': {'type': 'string', 'description': 'Verified work email or empty'},
         'affiliation': {'type': 'string', 'description': 'Hospital/practice/institution name'},
+        'organization_domain': {
+            'type': 'string',
+            'description': "The institution's primary web domain (e.g. 'mountsinai.org'). CRITICAL output — feeds downstream tools.",
+        },
         'role': {'type': 'string', 'description': 'Title at that affiliation'},
-        'linkedin_url': {'type': 'string', 'description': 'LinkedIn profile URL if found (confirms current affiliation)'},
+        'linkedin_url': {'type': 'string', 'description': 'LinkedIn profile URL if found'},
         'source_url': {'type': 'string', 'description': 'Where you found this info'},
         'confidence': {'type': 'string', 'enum': ['high', 'medium', 'low', 'not_found']},
         'notes': {'type': 'string'},
@@ -667,33 +684,37 @@ def find_clinician_email_via_web(
     specialty: str = '',
     city: str = '',
     state: str = '',
+    postal_code: str = '',
     npi: str = '',
     user=None,
 ) -> dict:
-    location = ', '.join(x for x in [city, state] if x) or '(location unknown)'
+    location_bits = [x for x in [city, state, postal_code] if x]
+    location = ', '.join(location_bits) or '(location unknown)'
     prompt = (
-        f"Find the work email for this US-licensed clinician using web_search:\n"
+        f"Find the work email AND current institution domain for this US-licensed clinician:\n"
         f"Name: {first_name} {last_name}\n"
         f"Specialty: {specialty or '(unknown)'}\n"
         f"Location: {location}\n"
         f"NPI: {npi or '(not provided)'}\n\n"
-        f"Return findings via return_clinician_email. If you can't find an email "
-        f"directly, return the best source_url so the operator can find it."
+        f"Use web_search aggressively. Return the institution's primary domain "
+        f"(e.g. 'mountsinai.org') even if you can't find a publicly posted email — "
+        f"the domain alone is high-value for downstream enrichment."
     )
     result = AIService.call_structured_with_web_search(
         prompt=prompt,
         system_prompt=CLINICIAN_EMAIL_WEB_SYSTEM_PROMPT,
         tool_name='return_clinician_email',
-        tool_description='Return the clinician email, affiliation, and source URL.',
+        tool_description='Return the clinician email, affiliation, institution domain, and source URL.',
         tool_schema=CLINICIAN_EMAIL_WEB_TOOL_SCHEMA,
         function_name='find_clinician_email_via_web',
         user=user,
         max_tokens=2048,
-        max_web_searches=5,
+        max_web_searches=10,
     )
     return {
         'email': (result.get('email') or '').strip().lower(),
         'affiliation': (result.get('affiliation') or '').strip(),
+        'organization_domain': (result.get('organization_domain') or '').strip().lower().lstrip('https://').lstrip('http://').rstrip('/'),
         'role': (result.get('role') or '').strip(),
         'linkedin_url': (result.get('linkedin_url') or '').strip(),
         'source_url': (result.get('source_url') or '').strip(),

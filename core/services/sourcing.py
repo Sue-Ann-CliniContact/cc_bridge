@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 import requests
 from django.db import transaction
 
-from core.models import Lead, OptOut, PartnerProfile, Project
+from core.models import Lead, OptOut, PartnerProfile, Project, ProjectLead
 from integrations import ai_sourcing, apollo, monday_client, npi
 
 log = logging.getLogger(__name__)
@@ -85,6 +85,56 @@ def _opted_out_emails(emails: list[str]) -> set[str]:
     return set(OptOut.objects.filter(email__in=emails).values_list('email', flat=True))
 
 
+def _merge_geography(existing_geo: dict, incoming_geo: dict) -> dict:
+    merged = dict(existing_geo or {})
+    for key, value in (incoming_geo or {}).items():
+        if value in (None, '', [], {}):
+            continue
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merge_geography(merged.get(key) or {}, value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _merge_candidate_into_existing(
+    lead: Lead,
+    candidate: dict,
+    *,
+    default_enrichment: str,
+    prefer_incoming: bool = False,
+) -> Lead:
+    update_fields = set()
+    for field in (
+        'first_name', 'last_name', 'email', 'phone', 'npi',
+        'organization', 'role', 'specialty', 'contact_url', 'linkedin_url',
+    ):
+        incoming = (candidate.get(field) or '').strip()
+        existing = (getattr(lead, field) or '').strip()
+        if not incoming:
+            continue
+        if not existing or (prefer_incoming and incoming != existing):
+            setattr(lead, field, incoming)
+            update_fields.add(field)
+
+    merged_geo = _merge_geography(lead.geography or {}, candidate.get('geography') or {})
+    if merged_geo != (lead.geography or {}):
+        lead.geography = merged_geo
+        update_fields.add('geography')
+
+    if default_enrichment == Lead.ENRICHMENT_COMPLETE and lead.email and lead.enrichment_status != Lead.ENRICHMENT_COMPLETE:
+        lead.enrichment_status = Lead.ENRICHMENT_COMPLETE
+        update_fields.add('enrichment_status')
+    elif default_enrichment == Lead.ENRICHMENT_NEEDED and not lead.email and lead.enrichment_status == Lead.ENRICHMENT_FAILED:
+        lead.enrichment_status = Lead.ENRICHMENT_NEEDED
+        update_fields.add('enrichment_status')
+
+    if update_fields:
+        update_fields.add('updated_at')
+        lead.save(update_fields=list(update_fields))
+    return lead
+
+
 def _persist_candidate(candidate: dict, default_source: str, default_enrichment: str = Lead.ENRICHMENT_COMPLETE) -> tuple[Lead, bool, bool]:
     """Look up an existing Lead by email or npi; create if absent.
     If the match has materially different name/org, attach pending_conflict for
@@ -102,6 +152,18 @@ def _persist_candidate(candidate: dict, default_source: str, default_enrichment:
         existing = Lead.objects.filter(npi=npi_val).first()
 
     if existing:
+        strong_identity = (
+            (email and existing.email and existing.email.lower() == email.lower())
+            or (npi_val and existing.npi and existing.npi == npi_val)
+        )
+        if strong_identity:
+            _merge_candidate_into_existing(
+                existing,
+                candidate,
+                default_enrichment=default_enrichment,
+                prefer_incoming=bool(npi_val and existing.npi == npi_val),
+            )
+            return existing, False, False
         conflict = _diff_fields(existing, candidate)
         if conflict:
             existing.pending_conflict = {
@@ -190,13 +252,27 @@ def source_from_npi(project: Project, *, limit: int = 100) -> SourcingResult:
     geography = profile.geography or {}
     state = (geography.get('states') or [None])[0] if geography.get('type') == 'state' else None
     postal_code = geography.get('zip') if geography.get('type') == 'zip_radius' else None
+    existing_project_npis = set(
+        ProjectLead.objects.filter(project=project)
+        .exclude(lead__npi__isnull=True)
+        .exclude(lead__npi='')
+        .values_list('lead__npi', flat=True)
+    )
+    existing_project_emails = {
+        (email or '').strip().lower()
+        for email in ProjectLead.objects.filter(project=project)
+        .exclude(lead__email__isnull=True)
+        .exclude(lead__email='')
+        .values_list('lead__email', flat=True)
+    }
 
     try:
         raw_candidates, unrecognized = npi.search_multi(
             taxonomies=taxonomies,
             state=state,
             postal_code=postal_code,
-            limit=limit,
+            limit=min(limit * 2, 200),
+            skip=len(existing_project_npis),
         )
     except Exception as exc:  # noqa: BLE001 — surface network/HTTP errors to the UI
         result.errors.append(f'NPI API error: {exc}')
@@ -218,6 +294,16 @@ def source_from_npi(project: Project, *, limit: int = 100) -> SourcingResult:
         filtered_out = before - len(raw_candidates)
         if filtered_out:
             result.errors.append(f'Filtered {filtered_out} non-physician providers (NPs, PAs, RNs, etc.).')
+
+    unseen_candidates = [
+        c for c in raw_candidates
+        if (c.get('npi') or '') not in existing_project_npis
+        and ((c.get('email') or '').strip().lower() or '') not in existing_project_emails
+    ]
+    if unseen_candidates:
+        raw_candidates = unseen_candidates[:limit]
+    else:
+        raw_candidates = raw_candidates[:limit]
 
     result.candidates_found = len(raw_candidates)
     # NPI rarely returns email; mark new leads as needing enrichment
@@ -249,6 +335,15 @@ def source_from_ai(project: Project, *, limit: int = 30, user=None) -> SourcingR
             asset_texts.append(
                 f'[{asset.get_type_display()}{": " + asset.subject if asset.subject else ""}]\n{asset.content_text}'
             )
+    existing_orgs = [
+        org for org in (
+            Lead.objects.filter(project_leads__project=project)
+            .exclude(organization='')
+            .values_list('organization', flat=True)
+            .distinct()
+        )
+        if org
+    ]
 
     try:
         suggestions = ai_sourcing.suggest_support_groups(
@@ -259,6 +354,7 @@ def source_from_ai(project: Project, *, limit: int = 30, user=None) -> SourcingR
             target_org_types=profile.target_org_types or [],
             target_contact_roles=profile.target_contact_roles or [],
             asset_texts=asset_texts,
+            exclude_org_names=existing_orgs[:100],
             limit=limit,
             user=user,
         )
@@ -438,9 +534,11 @@ def import_from_monday_board(
             default_source=Lead.SOURCE_MONDAY,
             default_enrichment=Lead.ENRICHMENT_COMPLETE if email_norm else Lead.ENRICHMENT_NEEDED,
         )
-        # Remember the Monday item ID on a newly-created lead so we can two-way sync later
-        if created and item.get('id'):
+        # Remember the Monday item ID even on reused leads so future enrichments
+        # update the original Monday row instead of creating duplicates.
+        if item.get('id'):
             geo = lead.geography or {}
+            geo['monday_board_id'] = board_id
             geo['monday_item_id'] = item['id']
             lead.geography = geo
             lead.save(update_fields=['geography', 'updated_at'])

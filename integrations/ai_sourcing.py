@@ -75,11 +75,13 @@ def suggest_support_groups(
     target_org_types: list[str] | None = None,
     target_contact_roles: list[str] | None = None,
     asset_texts: list[str] | None = None,
+    exclude_org_names: list[str] | None = None,
     limit: int = 30,
     user=None,
 ) -> list[dict]:
     target_org_types = target_org_types or []
     target_contact_roles = target_contact_roles or []
+    exclude_org_names = exclude_org_names or []
     specialty_str = ', '.join(specialty_tags) if specialty_tags else '(not specified)'
     geo_str = _format_geography(geography)
     org_types_str = '\n'.join(f'- {t}' for t in target_org_types) if target_org_types else '- (no preference stated)'
@@ -102,6 +104,12 @@ def suggest_support_groups(
                 f"\n\nStudy materials (for additional grounding — do not propose orgs "
                 f"unrelated to this indication):\n{joined_assets[:4000]}"
             )
+    exclusion_section = ''
+    if exclude_org_names:
+        exclusion_section = (
+            "\nAlready sourced for this project — do not return these orgs again:\n"
+            + '\n'.join(f'- {name}' for name in exclude_org_names[:100])
+        )
 
     prompt = (
         f"Propose up to {min(limit, 30)} US-based partner organizations for this clinical trial.\n\n"
@@ -110,7 +118,7 @@ def suggest_support_groups(
         f"Therapeutic specialties (broad): {specialty_str}\n"
         f"Target org categories (ranked):\n{org_types_str}\n"
         f"Target contact roles: {roles_str}\n"
-        f"Geography: {geo_str}{asset_section}\n\n"
+        f"Geography: {geo_str}{asset_section}{exclusion_section}\n\n"
         f"Use the return_support_groups tool. Every org must serve the specific "
         f"indication above. Order from most indication-specific to most general."
     )

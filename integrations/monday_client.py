@@ -7,6 +7,8 @@ settings.MONDAY_WORKSPACE_ID (the dedicated Bridge workspace).
 """
 from __future__ import annotations
 
+import json
+
 import requests
 from django.conf import settings
 
@@ -117,3 +119,83 @@ def auto_map_columns(columns: list[dict]) -> dict:
         elif ('last' in title and 'name' in title) and not mapping['last_name']:
             mapping['last_name'] = col_id
     return mapping
+
+
+def bridge_column_map(columns: list[dict]) -> dict:
+    """Guess the standard Bridge board columns by title."""
+    mapping = {
+        'contact_name': '',
+        'organization': '',
+        'role_specialty': '',
+        'email': '',
+        'source_directory': '',
+        'campaign_status': '',
+        'last_event': '',
+        'interest_level': '',
+        'referral_link': '',
+        'referred_count': '',
+        'notes': '',
+    }
+    for col in columns:
+        title = (col.get('title') or '').strip().lower()
+        col_id = col.get('id')
+        if not col_id:
+            continue
+        if 'contact' in title and 'name' in title and not mapping['contact_name']:
+            mapping['contact_name'] = col_id
+        elif ('organization' in title or 'company' in title) and not mapping['organization']:
+            mapping['organization'] = col_id
+        elif ('role' in title or 'specialty' in title) and not mapping['role_specialty']:
+            mapping['role_specialty'] = col_id
+        elif 'email' in title and not mapping['email']:
+            mapping['email'] = col_id
+        elif 'source' in title and not mapping['source_directory']:
+            mapping['source_directory'] = col_id
+        elif 'campaign status' in title and not mapping['campaign_status']:
+            mapping['campaign_status'] = col_id
+        elif 'last event' in title and not mapping['last_event']:
+            mapping['last_event'] = col_id
+        elif 'interest' in title and not mapping['interest_level']:
+            mapping['interest_level'] = col_id
+        elif 'referral' in title and 'link' in title and not mapping['referral_link']:
+            mapping['referral_link'] = col_id
+        elif 'referred' in title and 'count' in title and not mapping['referred_count']:
+            mapping['referred_count'] = col_id
+        elif 'notes' in title and not mapping['notes']:
+            mapping['notes'] = col_id
+    return mapping
+
+
+def create_item(user, board_id: str, *, item_name: str, column_values: dict | None = None, group_id: str | None = None) -> dict:
+    query = """
+    mutation ($boardId: ID!, $itemName: String!, $columnValues: JSON, $groupId: String) {
+      create_item(board_id: $boardId, item_name: $itemName, column_values: $columnValues, group_id: $groupId) {
+        id
+      }
+    }
+    """
+    variables = {
+        'boardId': board_id,
+        'itemName': item_name,
+        'columnValues': json.dumps(column_values or {}),
+        'groupId': group_id,
+    }
+    data = graphql(user, query, variables)
+    return (data.get('create_item') or {})
+
+
+def change_multiple_column_values(user, board_id: str, item_id: str, column_values: dict) -> dict:
+    query = """
+    mutation ($boardId: ID!, $itemId: ID!, $columnValues: JSON!) {
+      change_multiple_column_values(board_id: $boardId, item_id: $itemId, column_values: $columnValues) {
+        id
+      }
+    }
+    """
+    variables = {
+        'boardId': board_id,
+        'itemId': item_id,
+        'columnValues': json.dumps(column_values),
+    }
+    data = graphql(user, query, variables)
+    return (data.get('change_multiple_column_values') or {})

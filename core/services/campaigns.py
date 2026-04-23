@@ -13,6 +13,7 @@ from django.utils import timezone
 from core.models import Campaign, Lead, Project, ProjectLead, StudyAsset
 from integrations import ai_sourcing as ai_sourcing_client
 from integrations import instantly as instantly_client
+from . import monday_sync
 
 
 def get_landing_page_url(project: Project) -> str:
@@ -186,6 +187,10 @@ def launch_campaign(
 
     ProjectLead.objects.filter(campaign=campaign, lead__email__in=[pl['email'] for pl in payload_leads]).update(
         campaign_status=ProjectLead.STATUS_QUEUED,
+    )
+    monday_sync.sync_project_leads(
+        campaign.project_leads.select_related('project', 'lead').all(),
+        user=user,
     )
 
     return {

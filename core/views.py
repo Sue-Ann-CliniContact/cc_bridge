@@ -21,6 +21,7 @@ from integrations import monday_client
 from .forms import LeadEditForm, PartnerProfileForm, ProjectForm, StudyAssetForm
 from .models import Campaign, Lead, OptOut, OutreachEvent, PartnerProfile, Project, ProjectLead, StudyAsset
 from .services import campaigns as campaigns_service
+from .services import monday_sync
 from .services import sourcing
 
 
@@ -221,6 +222,7 @@ def lead_edit(request, lead_id):
         form = LeadEditForm(request.POST, instance=lead)
         if form.is_valid():
             form.save()
+            monday_sync.sync_lead_everywhere(lead, user=request.user)
             messages.success(request, f'Updated {lead}.')
             next_url = request.POST.get('next') or request.GET.get('next')
             if next_url:
@@ -247,6 +249,7 @@ def lead_resolve_conflict(request, lead_id):
         messages.error(request, 'Unknown action')
     else:
         sourcing.resolve_conflict(lead, action)
+        monday_sync.sync_lead_everywhere(lead, user=request.user)
         messages.success(request, f'{lead}: conflict {action}d.')
     next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'dashboard'
     return redirect(next_url)
@@ -340,6 +343,11 @@ def add_leads_to_project(request, project_id):
         if lead_id not in existing
     ]
     ProjectLead.objects.bulk_create(to_create)
+    created_rows = list(
+        ProjectLead.objects.filter(project=project, lead_id__in=[pl.lead_id for pl in to_create])
+        .select_related('project', 'lead')
+    )
+    monday_sync.sync_project_leads(created_rows, user=request.user)
     messages.success(request, f'Added {len(to_create)} lead{"s" if len(to_create) != 1 else ""} to {project.study_code}.')
     return redirect('lead_review', project_id=project.pk)
 
@@ -349,6 +357,8 @@ def add_leads_to_project(request, project_id):
 def enrich_lead(request, lead_id):
     lead = get_object_or_404(Lead, pk=lead_id)
     result = sourcing.enrich_lead_with_apollo(lead, user=request.user)
+    if result.get('ok'):
+        monday_sync.sync_lead_everywhere(lead, user=request.user)
     return JsonResponse(result)
 
 
@@ -376,6 +386,8 @@ def web_enrich_clinician(request, lead_id):
     """Use Claude + web_search to find a clinician's work email."""
     lead = get_object_or_404(Lead, pk=lead_id)
     result = sourcing.enrich_clinician_via_web(lead, user=request.user)
+    if result.get('ok'):
+        monday_sync.sync_lead_everywhere(lead, user=request.user)
     return JsonResponse(result)
 
 
@@ -564,6 +576,7 @@ def webhook_instantly(request):
     # Only advance status; don't downgrade (e.g. don't set 'sent' if we already have 'replied')
     project_lead.campaign_status = mapped_status
     project_lead.save(update_fields=['campaign_status', 'updated_at'])
+    monday_sync.sync_project_lead(project_lead)
 
     # Auto-opt-out on unsubscribe
     if event_type == 'lead_unsubscribed' and lead_email:

@@ -32,6 +32,7 @@ def search(
     first_name: str | None = None,
     last_name: str | None = None,
     limit: int = 200,
+    skip: int = 0,
     enumeration_type: str = 'NPI-1',  # NPI-1 = individual, NPI-2 = organization
 ) -> list[dict]:
     """Search the CMS NPI Registry. Returns normalized lead dicts.
@@ -53,6 +54,8 @@ def search(
         'limit': min(limit, 200),
         'enumeration_type': enumeration_type,
     }
+    if skip:
+        params['skip'] = max(int(skip), 0)
     if taxonomy:
         # CMS NPI does exact substring match only when wildcards are present — wrap
         # short terms so e.g. "oncology" matches "Medical Oncology", "Hematology/Oncology", etc.
@@ -99,6 +102,7 @@ def search_multi(
     state: str | None = None,
     postal_code: str | None = None,
     limit: int = 200,
+    skip: int = 0,
 ) -> tuple[list[dict], list[str]]:
     """Iterate through each taxonomy term, aggregate matching candidates (deduped by NPI),
     and report which terms CMS didn't recognize. Lets one bad specialty_tag not kill the whole run.
@@ -111,7 +115,7 @@ def search_multi(
         if not taxo or not taxo.strip():
             continue
         try:
-            batch = search(taxonomy=taxo.strip(), state=state, postal_code=postal_code, limit=limit)
+            batch = search(taxonomy=taxo.strip(), state=state, postal_code=postal_code, limit=limit, skip=skip)
         except NPITaxonomyNotFound:
             unrecognized.append(taxo.strip())
             continue

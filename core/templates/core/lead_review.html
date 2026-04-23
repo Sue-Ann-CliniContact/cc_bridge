@@ -104,7 +104,8 @@
 <form method="post" action="{% url 'add_leads_to_project' project.pk %}" class="mt-4">
   {% csrf_token %}
   <div class="surface-card overflow-hidden">
-    <table class="w-full text-sm">
+    <div class="overflow-x-auto">
+    <table class="w-full min-w-[1180px] text-sm">
       <thead class="bg-slate-50 text-xs uppercase tracking-wider text-cc-muted">
         <tr>
           <th class="px-4 py-3 w-10"><input type="checkbox" id="selectAll"></th>
@@ -179,7 +180,7 @@
                 <span class="cc-chip ok text-[10px]">{{ lead.get_enrichment_status_display }}</span>
               {% endif %}
             </td>
-            <td class="px-4 py-3 text-right whitespace-nowrap">
+            <td class="px-4 py-3 text-right whitespace-nowrap min-w-[220px]">
               {% if lead.pending_conflict %}
                 <a href="{% url 'lead_edit' lead.pk %}" class="cc-chip warn text-[10px] mr-1">Conflict</a>
               {% endif %}
@@ -212,6 +213,7 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
   </div>
 
   <div class="mt-4 flex items-center justify-between">
@@ -255,7 +257,12 @@ document.querySelectorAll('.enrich-btn').forEach(btn => {
       });
       const data = await res.json();
       if (data.ok) {
-        btn.textContent = data.email ? data.email : (data.note || 'No email found');
+        if (data.email) {
+          btn.textContent = data.email;
+          setTimeout(() => window.location.reload(), 900);
+        } else {
+          btn.textContent = data.note || 'No email found';
+        }
       } else {
         btn.textContent = 'Error';
         alert(data.error || 'Enrichment failed');

@@ -616,6 +616,7 @@ def enrich_clinician_via_web(lead: Lead, *, user=None) -> dict:
         'ok': True,
         'email': lead.email,
         'affiliation': result['affiliation'],
+        'organization_domain': result.get('organization_domain', ''),
         'role': result['role'],
         'source_url': result['source_url'],
         'confidence': result['confidence'],

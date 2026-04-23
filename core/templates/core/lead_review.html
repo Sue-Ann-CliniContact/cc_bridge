@@ -364,6 +364,11 @@ document.querySelectorAll('.web-enrich-btn').forEach(btn => {
         if (data.email) {
           btn.textContent = data.email;
           setTimeout(() => window.location.reload(), 900);
+        } else if (data.affiliation || data.organization_domain) {
+          const orgLabel = data.affiliation || data.organization_domain;
+          btn.textContent = `Profile found — ${orgLabel}`;
+          btn.setAttribute('title', data.source_url || data.organization_domain || orgLabel);
+          setTimeout(() => window.location.reload(), 900);
         } else if (data.source_url) {
           btn.textContent = `No email — see ${data.source_url.slice(0, 40)}…`;
         } else {

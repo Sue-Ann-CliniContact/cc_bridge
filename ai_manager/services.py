@@ -129,7 +129,6 @@ class AIService:
                 {'type': 'web_search_20250305', 'name': 'web_search', 'max_uses': max_web_searches},
                 {'name': tool_name, 'description': tool_description, 'input_schema': tool_schema},
             ],
-            'tool_choice': {'type': 'tool', 'name': tool_name},
         }
         if system_prompt:
             kwargs['system'] = system_prompt

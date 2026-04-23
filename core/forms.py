@@ -39,8 +39,8 @@ class PartnerProfileForm(forms.ModelForm):
     )
     specialty_tags_csv = forms.CharField(
         required=False,
-        widget=forms.TextInput(attrs={'class': 'cc-input', 'placeholder': 'Medical Oncology, Hematology & Oncology'}),
-        help_text='CMS NPI taxonomy names, comma-separated — drives the NPI physician search',
+        widget=forms.TextInput(attrs={'class': 'cc-input', 'placeholder': 'Clinical Genetics, Clinical Biochemical Genetics, Genetic Counselor, Pediatrics'}),
+        help_text='CMS NPI taxonomy names, comma-separated — drives NPI provider sourcing. Use multiple genetics/metabolic tags for rare-disease projects.',
     )
     icd10_codes_csv = forms.CharField(
         required=False,

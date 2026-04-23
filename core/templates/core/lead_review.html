@@ -51,7 +51,7 @@
           <button class="cc-btn cc-btn-ghost">Source from NPI</button>
         </form>
         <form method="post" action="{% url 'source_leads_ai' project.pk %}">{% csrf_token %}
-          <input type="hidden" name="limit" value="30">
+          <input type="hidden" name="limit" value="50">
           <button class="cc-btn cc-btn-ghost">Suggest with AI</button>
         </form>
       {% endif %}

@@ -233,6 +233,57 @@ def resolve_conflict(lead: Lead, action: str) -> Lead:
     return lead
 
 
+def _profile_text_blob(profile: PartnerProfile) -> str:
+    return ' '.join([
+        profile.study_indication or '',
+        profile.patient_population_description or '',
+        ' '.join(profile.target_org_types or []),
+        ' '.join(profile.target_contact_roles or []),
+        ' '.join(profile.specialty_tags or []),
+    ]).lower()
+
+
+def _expand_specialty_tags(profile: PartnerProfile) -> list[str]:
+    tags = [t.strip() for t in (profile.specialty_tags or []) if t and t.strip()]
+    blob = _profile_text_blob(profile)
+    expansions: list[str] = []
+
+    if any(term in blob for term in ('genetic', 'genetics', 'genomic')):
+        expansions.extend([
+            'Clinical Genetics',
+            'Genetic Counselor',
+        ])
+    if any(term in blob for term in ('metabolic', 'biochemical genetics', 'faod', 'fatty acid oxidation', 'inherited metabolic', 'rare disease')):
+        expansions.extend([
+            'Clinical Biochemical Genetics',
+            'Pediatrics',
+        ])
+    if any(term in blob for term in ('pediatric', 'paediatric', 'children')):
+        expansions.append('Pediatrics')
+
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for term in [*tags, *expansions]:
+        key = term.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered.append(term)
+    return ordered
+
+
+def _should_limit_to_physicians(profile: PartnerProfile) -> bool:
+    blob = _profile_text_blob(profile)
+    non_physician_signals = (
+        'counselor', 'counsellor', 'dietitian', 'dietician', 'navigator',
+        'coordinator', 'social worker', 'nurse practitioner', 'clinic', 'center',
+        'centre', 'org', 'organization', 'organisation', 'advocacy',
+    )
+    if any(signal in blob for signal in non_physician_signals):
+        return False
+    return profile.partner_type in (PartnerProfile.PARTNER_CLINICIAN, PartnerProfile.PARTNER_INVESTIGATOR)
+
+
 @transaction.atomic
 def source_from_npi(project: Project, *, limit: int = 100) -> SourcingResult:
     result = SourcingResult(source='npi')
@@ -244,7 +295,7 @@ def source_from_npi(project: Project, *, limit: int = 100) -> SourcingResult:
         result.errors.append('NPI Registry does not list support groups — use "Suggest with AI" instead.')
         return result
 
-    taxonomies = [t for t in (profile.specialty_tags or []) if t and t.strip()]
+    taxonomies = _expand_specialty_tags(profile)
     if not taxonomies:
         result.errors.append('Add at least one specialty tag to the partner profile.')
         return result
@@ -288,7 +339,7 @@ def source_from_npi(project: Project, *, limit: int = 100) -> SourcingResult:
     # Physician filter: for clinician / investigator partner types, only keep
     # MDs/DOs (taxonomy codes 207X / 208X). Otherwise NPs, RNs, PAs, social
     # workers, chaplains, etc. flood the list.
-    if profile.partner_type in (PartnerProfile.PARTNER_CLINICIAN, PartnerProfile.PARTNER_INVESTIGATOR):
+    if _should_limit_to_physicians(profile):
         before = len(raw_candidates)
         raw_candidates = [c for c in raw_candidates if npi.is_physician(c)]
         filtered_out = before - len(raw_candidates)

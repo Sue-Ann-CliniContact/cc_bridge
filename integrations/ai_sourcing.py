@@ -16,8 +16,8 @@ log = logging.getLogger(__name__)
 
 SUPPORT_GROUP_SYSTEM_PROMPT = (
     "You help a clinical-trial outreach team find legitimate US-based partner "
-    "organizations for a specific study. You return a list ordered from most "
-    "indication-specific to most general.\n\n"
+    "organizations and provider institutions for a specific study. You return "
+    "a list ordered from most indication-specific to most general.\n\n"
     "Preferred (top of list): foundations and registries whose mission directly "
     "targets the stated indication. Include these first even if they're smaller. "
     "If the study is about HER2+ metastatic breast cancer, the top entries are "
@@ -29,12 +29,16 @@ SUPPORT_GROUP_SYSTEM_PROMPT = (
     "Exclude: organizations unrelated to the indication's therapeutic area. No "
     "children's tumor foundations for adult breast cancer studies, no heart-disease "
     "charities for oncology studies, etc.\n\n"
-    "Aim for 15-25 orgs total. Don't return an empty list unless the study materials "
-    "are genuinely unreadable — if the indication is narrow, fill the list with "
-    "broader-therapeutic-area orgs instead of returning nothing.\n\n"
-    "Only include real, well-known US organizations with verifiable public websites. "
-    "Do not invent names or URLs. Do not include hospitals, clinics, or commercial "
-    "CROs unless they run a relevant patient-support program.\n\n"
+    "For national projects, aim for roughly 40-60 organizations if the category "
+    "set is broad enough. For narrower projects, still aim for at least 25-40. "
+    "Do not stop at a short list unless the category is truly tiny. If the "
+    "indication is narrow, fill the list with broader-therapeutic-area orgs and "
+    "relevant provider institutions instead of returning nothing.\n\n"
+    "Only include real US organizations or provider institutions with verifiable "
+    "public websites. Do not invent names or URLs. If the requested categories "
+    "include clinics, hospitals, academic medical centers, metabolic/genetic "
+    "programs, or provider groups, include those directly instead of filtering "
+    "only for nonprofits.\n\n"
     "For each org, propose 1-3 likely contact roles at that specific type of org — "
     "align these with the study's target_contact_roles where possible."
 )
@@ -44,7 +48,7 @@ SUPPORT_GROUP_TOOL_SCHEMA = {
     'properties': {
         'orgs': {
             'type': 'array',
-            'description': '15–30 suggested US patient advocacy orgs / support groups',
+            'description': '25-60 suggested US partner orgs, provider institutions, clinics, or support groups',
             'items': {
                 'type': 'object',
                 'properties': {
@@ -112,7 +116,7 @@ def suggest_support_groups(
         )
 
     prompt = (
-        f"Propose up to {min(limit, 30)} US-based partner organizations for this clinical trial.\n\n"
+        f"Propose up to {min(limit, 60)} US-based partner organizations or provider institutions for this clinical trial.\n\n"
         f"{indication_line}\n"
         f"{pop_line}\n"
         f"Therapeutic specialties (broad): {specialty_str}\n"
@@ -386,25 +390,29 @@ PROFILE_SYSTEM_PROMPT = (
     "Include stage, biomarker, or line-of-therapy if the materials state it.\n"
     "2. patient_population_description — 2-4 sentences describing the patients "
     "(disease stage, key inclusion criteria, age, demographics).\n"
-    "3. target_org_types — 2-5 categories of organizations to reach, ordered from "
+    "3. target_org_types — 3-6 categories of organizations to reach, ordered from "
     "most indication-specific to most general. Examples: \"foundations specific "
     "to [indication]\", \"NCI-designated comprehensive cancer centers\", "
     "\"academic medical centers with [specialty] programs\", \"community "
-    "oncology networks\", \"patient registries for [indication]\". Be "
+    "oncology networks\", \"patient registries for [indication]\", "
+    "\"metabolic/genetic clinics\", \"pediatric genetics programs\", "
+    "\"rare-disease centers of excellence\". Be "
     "indication-specific when possible.\n"
     "4. target_contact_roles — 3-6 specific titles of people to reach. Examples: "
     "\"Principal Investigator\", \"Clinical Research Coordinator\", "
     "\"Director of Clinical Research\", \"Patient Navigator\", \"Director of "
     "Patient Services\", \"Medical Director\". Pick roles that match the org "
     "types — clinical roles at medical centers, program roles at advocacy orgs.\n"
-    "5. specialty_tags — 1-3 REAL CMS NPI Registry taxonomy descriptions (the NPI "
+    "5. specialty_tags — 3-6 REAL CMS NPI Registry taxonomy descriptions (the NPI "
     "API will reject free-text topics like 'clinical research' or 'hematologic "
     "malignancies'). Valid examples: 'Medical Oncology', 'Radiation Oncology', "
     "'Hematology & Oncology', 'Cardiology', 'Family Medicine', 'Pediatrics', "
     "'Neurology', 'Dermatology', 'Endocrinology, Diabetes & Metabolism', "
     "'Gastroenterology', 'Nephrology', 'Pulmonary Disease', 'Rheumatology', "
-    "'Psychiatry'. If no single CMS taxonomy matches the indication well, pick "
-    "the closest physician specialty.\n"
+    "'Psychiatry', 'Clinical Genetics', 'Clinical Biochemical Genetics', "
+    "'Genetic Counselor'. For genetics/metabolic/rare-disease studies, include "
+    "the relevant genetics and pediatric tags instead of falling back to only a "
+    "single broad physician specialty.\n"
     "6. icd10_codes — 1-3 codes inferable from the materials (optional).\n"
     "7. geography — national unless the materials name specific sites/states.\n\n"
     "One-sentence rationale ties the profile to what you read in the materials."
@@ -428,7 +436,7 @@ PROFILE_TOOL_SCHEMA = {
         'target_org_types': {
             'type': 'array',
             'items': {'type': 'string'},
-            'description': '2-5 org categories, most indication-specific first',
+            'description': '3-6 org categories, most indication-specific first',
         },
         'target_contact_roles': {
             'type': 'array',
@@ -438,7 +446,7 @@ PROFILE_TOOL_SCHEMA = {
         'specialty_tags': {
             'type': 'array',
             'items': {'type': 'string'},
-            'description': '1-3 real CMS NPI taxonomy descriptions',
+            'description': '3-6 real CMS NPI taxonomy descriptions',
         },
         'icd10_codes': {
             'type': 'array',

@@ -321,7 +321,7 @@ def source_leads_npi(request, project_id):
 @require_POST
 def source_leads_ai(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
-    limit = int(request.POST.get('limit') or 30)
+    limit = int(request.POST.get('limit') or 50)
     result = sourcing.source_from_ai(project, limit=limit, user=request.user)
     _flash_sourcing_result(request, result)
     return redirect('lead_review', project_id=project.pk)

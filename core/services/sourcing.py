@@ -145,6 +145,22 @@ def infer_lead_classification(*, organization: str = '', role: str = '', special
     return Lead.CLASS_UNCLASSIFIED
 
 
+def refresh_lead_classification(lead: Lead, *, overwrite: bool = False) -> str:
+    inferred = infer_lead_classification(
+        organization=lead.organization,
+        role=lead.role,
+        specialty=lead.specialty,
+        contact_url=lead.contact_url,
+        geography=lead.geography or {},
+    )
+    if inferred == Lead.CLASS_UNCLASSIFIED:
+        return lead.classification
+    if overwrite or lead.classification in ('', Lead.CLASS_UNCLASSIFIED):
+        lead.classification = inferred
+        lead.save(update_fields=['classification', 'updated_at'])
+    return lead.classification
+
+
 def _candidate_classification(candidate: dict) -> str:
     explicit = (candidate.get('classification') or '').strip()
     valid = {choice for choice, _label in Lead.CLASSIFICATION_CHOICES}
@@ -670,7 +686,7 @@ def import_from_monday_board(
         lead, created, conflict = _persist_candidate(
             candidate,
             default_source=Lead.SOURCE_MONDAY,
-            default_enrichment=Lead.ENRICHMENT_COMPLETE if email_norm else Lead.ENRICHMENT_NEEDED,
+            default_enrichment=Lead.ENRICHMENT_NEEDED,
         )
         # Remember the Monday item ID even on reused leads so future enrichments
         # update the original Monday row instead of creating duplicates.
@@ -817,19 +833,20 @@ def enrich_clinician_via_web(lead: Lead, *, user=None) -> dict:
         return {'ok': False, 'error': str(exc)}
 
     update_fields = set()
-    if result['email'] and not lead.email:
+    if result['email']:
         email = result['email']
         if OptOut.objects.filter(email=email).exists():
             return {'ok': True, 'email': email, 'note': 'Email found but is opted-out — not saved.'}
-        lead.email = email
-        update_fields.add('email')
-    if result['affiliation'] and not lead.organization:
+        if lead.email != email:
+            lead.email = email
+            update_fields.add('email')
+    if result['affiliation'] and (not lead.organization or lead.classification in ('', Lead.CLASS_UNCLASSIFIED)):
         lead.organization = result['affiliation']
         update_fields.add('organization')
-    if result['role'] and not lead.role:
+    if result['role'] and (not lead.role or lead.classification in ('', Lead.CLASS_UNCLASSIFIED)):
         lead.role = result['role']
         update_fields.add('role')
-    if result['source_url'] and not lead.contact_url:
+    if result['source_url'] and (not lead.contact_url or lead.classification in ('', Lead.CLASS_UNCLASSIFIED)):
         lead.contact_url = result['source_url']
         update_fields.add('contact_url')
     if result.get('linkedin_url') and not lead.linkedin_url:
@@ -899,16 +916,17 @@ def enrich_lead_with_apollo(lead: Lead, *, user=None) -> dict:
     # Always persist the full Apollo payload for future reference.
     lead.apollo_data = match
 
-    if match.get('email') and not lead.email:
+    if match.get('email'):
         email = match['email'].strip().lower()
         if OptOut.objects.filter(email=email).exists():
             return {'ok': True, 'email': email, 'note': 'Email resolved but is opted-out — not saved.'}
-        lead.email = email
-        updated_fields.append('email')
+        if lead.email != email:
+            lead.email = email
+            updated_fields.append('email')
     if match.get('phone') and not lead.phone:
         lead.phone = match['phone']
         updated_fields.append('phone')
-    if match.get('title') and not lead.role:
+    if match.get('title') and (not lead.role or lead.classification in ('', Lead.CLASS_UNCLASSIFIED)):
         lead.role = match['title']
         updated_fields.append('role')
     if match.get('linkedin_url') and not lead.linkedin_url:
@@ -916,7 +934,7 @@ def enrich_lead_with_apollo(lead: Lead, *, user=None) -> dict:
         updated_fields.append('linkedin_url')
     # Fill organization if blank — Apollo often has the employer we're missing
     apollo_org = (match.get('organization') or {}).get('name', '')
-    if apollo_org and not lead.organization:
+    if apollo_org and (not lead.organization or lead.classification in ('', Lead.CLASS_UNCLASSIFIED)):
         lead.organization = apollo_org
         updated_fields.append('organization')
     # Fill city/state in geography if blank

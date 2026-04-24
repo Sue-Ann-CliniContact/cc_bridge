@@ -168,11 +168,12 @@
 <!-- Leads -->
 <div class="mt-8 max-w-4xl">
   <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Leads in this campaign</h2>
-  <div class="surface-card mt-3 overflow-hidden">
-    <table class="w-full text-sm">
+  <div class="surface-card lead-table-card mt-3">
+    <div class="lead-table-shell">
+    <table class="lead-table w-full min-w-[860px] text-sm">
       <thead class="bg-slate-50 text-xs uppercase tracking-wider text-cc-muted">
         <tr>
-          <th class="px-4 py-3 text-left">Name</th>
+          <th class="px-4 py-3 text-left sticky-col sticky-col-name-only">Name</th>
           <th class="px-4 py-3 text-left">Organization</th>
           <th class="px-4 py-3 text-left">Email</th>
           <th class="px-4 py-3 text-left">Status</th>
@@ -180,8 +181,8 @@
       </thead>
       <tbody class="divide-y divide-slate-100">
         {% for pl in project_leads %}
-          <tr>
-            <td class="px-4 py-3 font-medium text-cc-ink">{{ pl.lead.first_name }} {{ pl.lead.last_name }}</td>
+          <tr class="lead-row" data-edit-url="{% url 'lead_edit' pl.lead.pk %}?next={{ request.get_full_path|urlencode }}">
+            <td class="px-4 py-3 font-medium text-cc-ink sticky-col sticky-col-name-only"><a href="{% url 'lead_edit' pl.lead.pk %}?next={{ request.get_full_path|urlencode }}" class="font-semibold text-cc-ink hover:text-cc-royal hover:underline">{{ pl.lead.first_name }} {{ pl.lead.last_name }}</a></td>
             <td class="px-4 py-3 text-cc-muted">{{ pl.lead.organization|default:"—" }}</td>
             <td class="px-4 py-3 text-cc-ink">{{ pl.lead.email }}</td>
             <td class="px-4 py-3">
@@ -201,6 +202,23 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll('.lead-row').forEach((row) => {
+  row.addEventListener('click', (event) => {
+    if (event.target.closest('a, button, input, label, form')) {
+      return;
+    }
+    const url = row.dataset.editUrl;
+    if (url) {
+      window.location.href = url;
+    }
+  });
+});
+</script>
 {% endblock %}

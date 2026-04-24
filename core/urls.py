@@ -30,6 +30,7 @@ urlpatterns = [
     path('leads/<int:lead_id>/edit/', views.lead_edit, name='lead_edit'),
     path('leads/<int:lead_id>/resolve-conflict/', views.lead_resolve_conflict, name='lead_resolve_conflict'),
     path('api/leads/<int:lead_id>/enrich/', views.enrich_lead, name='enrich_lead'),
+    path('api/leads/<int:lead_id>/reclassify/', views.reclassify_lead, name='reclassify_lead'),
     path('api/leads/<int:lead_id>/find-contact/', views.find_org_contact, name='find_org_contact'),
     path('api/leads/<int:lead_id>/web-contacts/', views.web_find_org_contacts, name='web_find_org_contacts'),
     path('api/leads/<int:lead_id>/web-enrich/', views.web_enrich_clinician, name='web_enrich_clinician'),

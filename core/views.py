@@ -358,6 +358,8 @@ def lead_edit(request, lead_id):
         form = LeadEditForm(request.POST, instance=lead)
         if form.is_valid():
             form.save()
+            if lead.classification == Lead.CLASS_UNCLASSIFIED:
+                sourcing.refresh_lead_classification(lead)
             monday_sync.sync_lead_everywhere(lead, user=request.user)
             messages.success(request, f'Updated {lead}.')
             next_url = request.POST.get('next') or request.GET.get('next')
@@ -507,6 +509,20 @@ def enrich_lead(request, lead_id):
     if result.get('ok'):
         monday_sync.sync_lead_everywhere(lead, user=request.user)
     return JsonResponse(result)
+
+
+@login_required
+@require_POST
+def reclassify_lead(request, lead_id):
+    lead = get_object_or_404(Lead, pk=lead_id)
+    previous = lead.classification
+    updated = sourcing.refresh_lead_classification(lead, overwrite=True)
+    monday_sync.sync_lead_everywhere(lead, user=request.user)
+    return JsonResponse({
+        'ok': True,
+        'classification': updated,
+        'changed': updated != previous,
+    })
 
 
 @login_required

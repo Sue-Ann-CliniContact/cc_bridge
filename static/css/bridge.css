@@ -206,3 +206,74 @@
     background: linear-gradient(180deg, rgba(94, 190, 255, 0.16), rgba(37, 80, 230, 0.06));
     border: 1px solid rgba(37, 80, 230, 0.08);
 }
+
+.lead-table-card {
+    overflow: hidden;
+}
+
+.lead-table-shell {
+    overflow-x: auto;
+    overflow-y: auto;
+    max-width: 100%;
+    scrollbar-gutter: stable both-edges;
+}
+
+.lead-table-shell::-webkit-scrollbar {
+    height: 12px;
+    width: 12px;
+}
+
+.lead-table-shell::-webkit-scrollbar-track {
+    background: #eef2f7;
+}
+
+.lead-table-shell::-webkit-scrollbar-thumb {
+    background: #b8c2d6;
+    border-radius: 999px;
+    border: 2px solid #eef2f7;
+}
+
+.lead-table .sticky-col {
+    position: sticky;
+    z-index: 2;
+    background: #fff;
+}
+
+.lead-table thead .sticky-col {
+    z-index: 4;
+    background: #f8fafc;
+}
+
+.lead-table .sticky-col-check {
+    left: 0;
+    width: 3.5rem;
+    min-width: 3.5rem;
+}
+
+.lead-table .sticky-col-name {
+    left: 3.5rem;
+    min-width: 15rem;
+    box-shadow: 1px 0 0 rgba(19, 38, 86, 0.06);
+}
+
+.lead-table .sticky-col-name-only {
+    left: 0;
+    min-width: 15rem;
+    box-shadow: 1px 0 0 rgba(19, 38, 86, 0.06);
+}
+
+.lead-table tbody tr.bg-slate-50\/60 .sticky-col {
+    background: rgba(248, 250, 252, 0.96);
+}
+
+.lead-row {
+    cursor: pointer;
+}
+
+.lead-row:hover td {
+    background-color: rgba(37, 80, 230, 0.025);
+}
+
+.lead-row:hover .sticky-col {
+    background-color: rgba(243, 247, 255, 0.98);
+}

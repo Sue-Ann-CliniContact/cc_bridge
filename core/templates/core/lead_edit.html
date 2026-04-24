@@ -93,6 +93,26 @@
   </div>
 {% endif %}
 
+<div class="surface-card mt-6 p-6 max-w-3xl">
+  <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Lead tools</h2>
+  <p class="mt-1 text-sm text-cc-muted">After editing the lead, you can rerun enrichment or classification here without going back to the table.</p>
+  <div class="mt-4 flex flex-wrap gap-2">
+    {% if lead.first_name or lead.last_name %}
+      <button type="button" class="cc-btn cc-btn-ghost text-xs" id="btnLeadWeb">{% if lead.email or lead.contact_url %}Redo web search{% else %}Web search{% endif %}</button>
+    {% endif %}
+    {% if lead.first_name or lead.last_name %}
+      <button type="button" class="cc-btn cc-btn-ghost text-xs" id="btnLeadApollo">{% if lead.email or lead.apollo_data %}Apollo refresh{% else %}Apollo enrich{% endif %}</button>
+    {% endif %}
+    {% if lead.classification == 'unclassified' %}
+      <button type="button" class="cc-btn cc-btn-ghost text-xs" id="btnLeadClassify">Classify lead</button>
+    {% endif %}
+    {% if lead.organization or lead.contact_url %}
+      <button type="button" class="cc-btn cc-btn-ghost text-xs" id="btnLeadOrgSearch">Org web search</button>
+    {% endif %}
+  </div>
+  <div id="leadToolStatus" class="mt-3 text-xs text-cc-muted"></div>
+</div>
+
 <form method="post" class="surface-card mt-6 p-8 max-w-3xl space-y-5">
   {% csrf_token %}
   <div class="grid gap-4 md:grid-cols-2">
@@ -123,4 +143,34 @@
     <button type="submit" class="cc-btn cc-btn-primary">Save</button>
   </div>
 </form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function getCsrfToken() {
+  return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+}
+
+async function postLeadTool(url, pendingText) {
+  const status = document.getElementById('leadToolStatus');
+  status.textContent = pendingText;
+  const response = await fetch(url, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'X-CSRFToken': getCsrfToken() },
+  });
+  const data = await response.json();
+  if (!data.ok) {
+    status.textContent = data.error || 'Request failed.';
+    return;
+  }
+  status.textContent = data.email || data.classification || data.note || 'Updated.';
+  window.setTimeout(() => window.location.reload(), 700);
+}
+
+document.getElementById('btnLeadWeb')?.addEventListener('click', () => postLeadTool("{% url 'web_enrich_clinician' lead.pk %}", 'Running web search...'));
+document.getElementById('btnLeadApollo')?.addEventListener('click', () => postLeadTool("{% url 'enrich_lead' lead.pk %}", 'Running Apollo...'));
+document.getElementById('btnLeadClassify')?.addEventListener('click', () => postLeadTool("{% url 'reclassify_lead' lead.pk %}", 'Refreshing classification...'));
+document.getElementById('btnLeadOrgSearch')?.addEventListener('click', () => postLeadTool("{% url 'web_find_org_contacts' lead.pk %}", 'Searching the web for org contacts...'));
+</script>
 {% endblock %}

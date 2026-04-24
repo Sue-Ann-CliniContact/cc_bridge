@@ -71,8 +71,8 @@
             <label class="cc-label">Body</label>
             <textarea name="step_{{ forloop.counter0 }}_body" rows="9" class="cc-input font-mono text-xs">{{ step.body }}</textarea>
             <p class="mt-1 text-xs text-cc-muted">
-              Merge vars: <code>{% templatetag openvariable %}first_name{% templatetag closevariable %}</code>,
-              <code>{% templatetag openvariable %}landing_page_url{% templatetag closevariable %}</code>
+              Merge vars: <code>{% templatetag openvariable %}first_name{% templatetag closevariable %}</code>.
+              Use <code>{% templatetag openvariable %}landing_page_url{% templatetag closevariable %}</code> only for later-stage follow-up after a provider confirms interest.
             </p>
           </div>
         </div>

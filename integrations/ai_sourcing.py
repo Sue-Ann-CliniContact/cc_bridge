@@ -752,22 +752,33 @@ EMAIL_SEQUENCE_SYSTEM_PROMPT = (
     "safety statistics that are not in the source.\n"
     "- Tone: respectful of the recipient's time, plain-spoken, no sales hype, no "
     "exclamation points, no fake urgency.\n"
-    "- Always include a clear, specific CTA.\n"
-    "- Use the placeholder {{landing_page_url}} for the study landing page link; "
-    "do not paste a URL yourself.\n"
+    "- The initial outreach goal is to confirm whether the recipient is open to "
+    "collaborating and referring potential participants — NOT to send people "
+    "straight to the participant landing page.\n"
+    "- Always include a clear, specific CTA. Preferred CTAs: offer to send the "
+    "flyer, offer to connect them with the study team, or ask whether they would "
+    "be open to learning more about referring eligible participants.\n"
+    "- Do NOT direct the recipient to the participant referral landing page or "
+    "screener form in the initial outreach. Only mention that those materials "
+    "can be shared after they confirm interest.\n"
+    "- You may mention {{landing_page_url}} only as a later-stage placeholder for "
+    "when an interested collaborator asks for the referral page; do not make it "
+    "the main CTA in these first-touch drafts.\n"
     "- You MAY use {{first_name}} once per email; avoid other merge vars.\n"
     "- End each email with a single closing line like 'Best,\\nThe CliniContact "
     "team' — the actual sending signature is applied by Instantly per sending "
     "account.\n\n"
     "Return a 3-step sequence via the return_email_sequence tool:\n"
     "Step 1 (delay 0): cold intro. Subject ≤ 60 chars. Body 120-180 words. "
-    "Name the indication, describe who the study is for, invite review of the "
-    "landing page.\n"
+    "Name the indication, describe who the study is for, and ask whether they "
+    "would be open to discussing collaboration or receiving the flyer.\n"
     "Step 2 (delay 4 days): brief follow-up. Subject short, references step 1. "
-    "Body ≤ 100 words. No new clinical info — a respectful nudge.\n"
+    "Body ≤ 100 words. No new clinical info — a respectful nudge that offers to "
+    "send materials or connect them with the study team.\n"
     "Step 3 (delay 8 days): value-add close. Subject distinct. Body 100-140 "
-    "words. Re-state the patient benefit in one line, soft CTA, signal we won't "
-    "keep emailing."
+    "words. Re-state the patient benefit in one line, soft CTA, and note that if "
+    "they are interested in referring patients the team can send the referral "
+    "landing page and screener form."
 )
 
 EMAIL_SEQUENCE_TOOL_SCHEMA = {
@@ -782,7 +793,7 @@ EMAIL_SEQUENCE_TOOL_SCHEMA = {
                     'step_num': {'type': 'integer', 'description': '1, 2, or 3'},
                     'delay_days': {'type': 'integer', 'description': 'Days after previous step (step 1 = 0)'},
                     'subject': {'type': 'string'},
-                    'body': {'type': 'string', 'description': 'Plaintext body with {{first_name}} and {{landing_page_url}} placeholders'},
+                    'body': {'type': 'string', 'description': 'Plaintext body with {{first_name}} and optional later-stage {{landing_page_url}} placeholder'},
                     'rationale': {'type': 'string', 'description': 'One short sentence on what this step does'},
                 },
                 'required': ['step_num', 'subject', 'body', 'delay_days'],
@@ -810,13 +821,19 @@ def draft_email_sequence(
         f"Target contact roles: {', '.join(profile.target_contact_roles or []) or '(not set)'}"
     )
     joined_assets = '\n\n---\n\n'.join(t.strip() for t in asset_texts if t and t.strip()) or '(no assets uploaded)'
-    landing_line = f"Landing page URL (will substitute for {{{{landing_page_url}}}}): {landing_page_url}" if landing_page_url else "Landing page URL not configured — still use {{landing_page_url}} placeholder."
+    landing_line = (
+        f"Referral landing page URL available for later-stage follow-up ({{{{landing_page_url}}}}): {landing_page_url}"
+        if landing_page_url
+        else "Referral landing page URL not configured. Do not rely on {{landing_page_url}} in the initial outreach."
+    )
 
     prompt = (
         f"Project: {project_name}\n"
         f"Study code: {study_code}\n\n"
         f"Targeting context:\n{profile_ctx}\n\n"
-        f"{landing_line}\n\n"
+        f"{landing_line}\n"
+        f"Important: the first-touch emails should ask whether the recipient is interested in collaborating, receiving the flyer, or speaking with the study team. "
+        f"Only mention sending the referral landing page / screener after they confirm interest.\n\n"
         f"Approved study materials (your only source of clinical claims):\n---\n{joined_assets[:8000]}\n---\n\n"
         f"Draft the 3-step sequence via return_email_sequence."
     )

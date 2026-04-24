@@ -6,7 +6,7 @@ from django.conf import settings as django_settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
-from django.db.models import Exists, OuterRef, Q
+from django.db.models import Count, Exists, OuterRef, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -310,12 +310,15 @@ def lead_review(request, project_id):
 
     qs = Lead.objects.annotate(on_project=Exists(already_on_project))
     source_filter = request.GET.get('source', '')
+    classification_filter = request.GET.get('classification', '')
     has_email = request.GET.get('has_email', '')
     hide_added = request.GET.get('hide_added', '1')
     query = request.GET.get('q', '').strip()
 
     if source_filter:
         qs = qs.filter(source=source_filter)
+    if classification_filter:
+        qs = qs.filter(classification=classification_filter)
     if has_email == '1':
         qs = qs.filter(email__isnull=False).exclude(email='')
     elif has_email == '0':
@@ -346,11 +349,13 @@ def lead_review(request, project_id):
         'conflict_count': conflict_count,
         'filters': {
             'source': source_filter,
+            'classification': classification_filter,
             'has_email': has_email,
             'hide_added': hide_added,
             'q': query,
         },
         'source_choices': Lead.SOURCE_CHOICES,
+        'classification_choices': Lead.CLASSIFICATION_CHOICES,
     })
 
 
@@ -443,6 +448,7 @@ def web_enrich_clinician(request, lead_id):
 @login_required
 def campaign_create(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
+    classification_filter = request.GET.get('classification', '')
 
     # Only offer ProjectLeads that (a) have an email and (b) aren't already on a campaign.
     available_qs = (
@@ -453,6 +459,30 @@ def campaign_create(request, project_id):
         .select_related('lead')
         .order_by('-created_at')
     )
+    if classification_filter:
+        available_qs = available_qs.filter(lead__classification=classification_filter)
+
+    classification_counts = list(
+        ProjectLead.objects
+        .filter(project=project, campaign__isnull=True)
+        .exclude(lead__email__isnull=True)
+        .exclude(lead__email='')
+        .values('lead__classification')
+        .annotate(total=Count('id'))
+        .order_by('lead__classification')
+    )
+    classification_totals = {
+        row['lead__classification']: row['total']
+        for row in classification_counts
+    }
+    classification_summaries = [
+        {
+            'value': value,
+            'label': label,
+            'total': classification_totals.get(value, 0),
+        }
+        for value, label in Lead.CLASSIFICATION_CHOICES
+    ]
 
     if request.method == 'POST':
         name = (request.POST.get('name') or '').strip() or f'{project.study_code} outreach — {timezone.now():%Y-%m-%d}'
@@ -475,6 +505,9 @@ def campaign_create(request, project_id):
         'project': project,
         'available_leads': available_qs,
         'suggested_name': f'{project.study_code} outreach — {timezone.now():%Y-%m-%d}',
+        'classification_filter': classification_filter,
+        'classification_choices': Lead.CLASSIFICATION_CHOICES,
+        'classification_summaries': classification_summaries,
     })
 
 

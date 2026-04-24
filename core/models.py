@@ -159,6 +159,19 @@ class Lead(models.Model):
         (ENRICHMENT_FAILED, 'Enrichment failed'),
     ]
 
+    CLASS_UNCLASSIFIED = 'unclassified'
+    CLASS_METABOLIC_CLINIC = 'metabolic_clinic'
+    CLASS_GENETIC_COUNSELOR = 'genetic_counselor'
+    CLASS_ADVOCACY_ORG = 'advocacy_org'
+    CLASS_COMMUNITY_PROVIDER = 'community_provider'
+    CLASSIFICATION_CHOICES = [
+        (CLASS_UNCLASSIFIED, 'Unclassified'),
+        (CLASS_METABOLIC_CLINIC, 'Metabolic Clinic'),
+        (CLASS_GENETIC_COUNSELOR, 'Genetic Counselor'),
+        (CLASS_ADVOCACY_ORG, 'Advocacy Organization'),
+        (CLASS_COMMUNITY_PROVIDER, 'Community Provider'),
+    ]
+
     first_name = models.CharField(max_length=150, blank=True)
     last_name = models.CharField(max_length=150, blank=True)
     email = models.EmailField(max_length=255, blank=True, null=True, db_index=True)
@@ -169,6 +182,7 @@ class Lead(models.Model):
     specialty = models.CharField(max_length=255, blank=True)
     contact_url = models.URLField(max_length=500, blank=True, help_text='Org website or contact-page link (used for AI-suggested orgs where humans need to find the email manually)')
     linkedin_url = models.URLField(max_length=500, blank=True, help_text='LinkedIn profile URL — captured from Apollo, web search, or manual entry')
+    classification = models.CharField(max_length=40, choices=CLASSIFICATION_CHOICES, default=CLASS_UNCLASSIFIED, db_index=True)
     geography = models.JSONField(default=dict, blank=True)
     source = models.CharField(max_length=30, choices=SOURCE_CHOICES, default=SOURCE_MANUAL)
     enrichment_status = models.CharField(max_length=30, choices=ENRICHMENT_CHOICES, default=ENRICHMENT_COMPLETE)

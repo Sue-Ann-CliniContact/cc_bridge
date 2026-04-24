@@ -84,6 +84,15 @@
     </select>
   </div>
   <div>
+    <label class="cc-label">Classification</label>
+    <select name="classification" class="cc-input">
+      <option value="">All classifications</option>
+      {% for value, label in classification_choices %}
+        <option value="{{ value }}" {% if value == filters.classification %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
     <label class="cc-label">Email</label>
     <select name="has_email" class="cc-input">
       <option value="" {% if filters.has_email == '' %}selected{% endif %}>Any</option>
@@ -112,6 +121,7 @@
           <th class="px-4 py-3 text-left">Name</th>
           <th class="px-4 py-3 text-left">Organization</th>
           <th class="px-4 py-3 text-left">Location</th>
+          <th class="px-4 py-3 text-left">Classification</th>
           <th class="px-4 py-3 text-left">Specialty</th>
           <th class="px-4 py-3 text-left">Email</th>
           <th class="px-4 py-3 text-left">Source</th>
@@ -166,6 +176,7 @@
                 —
               {% endif %}
             </td>
+            <td class="px-4 py-3"><span class="cc-chip muted text-[10px]">{{ lead.get_classification_display }}</span></td>
             <td class="px-4 py-3 text-cc-muted">{{ lead.specialty|default:"—" }}</td>
             <td class="px-4 py-3 text-cc-ink">
               {% if lead.email %}{{ lead.email }}{% else %}<span class="text-cc-muted">—</span>{% endif %}
@@ -207,7 +218,7 @@
             </td>
           </tr>
         {% empty %}
-          <tr><td colspan="9" class="px-4 py-12 text-center text-cc-muted text-sm">
+          <tr><td colspan="10" class="px-4 py-12 text-center text-cc-muted text-sm">
             No leads match these filters. Try sourcing from NPI or AI above.
           </td></tr>
         {% endfor %}
@@ -220,10 +231,10 @@
     <div class="text-xs text-cc-muted">
       Showing {{ page.start_index }}–{{ page.end_index }} of {{ page.paginator.count }}
       {% if page.has_previous %}
-        · <a href="?{% if filters.q %}q={{ filters.q }}&{% endif %}{% if filters.source %}source={{ filters.source }}&{% endif %}{% if filters.has_email %}has_email={{ filters.has_email }}&{% endif %}hide_added={{ filters.hide_added }}&page={{ page.previous_page_number }}" class="text-cc-royal hover:underline">prev</a>
+        · <a href="?{% if filters.q %}q={{ filters.q }}&{% endif %}{% if filters.source %}source={{ filters.source }}&{% endif %}{% if filters.classification %}classification={{ filters.classification }}&{% endif %}{% if filters.has_email %}has_email={{ filters.has_email }}&{% endif %}hide_added={{ filters.hide_added }}&page={{ page.previous_page_number }}" class="text-cc-royal hover:underline">prev</a>
       {% endif %}
       {% if page.has_next %}
-        · <a href="?{% if filters.q %}q={{ filters.q }}&{% endif %}{% if filters.source %}source={{ filters.source }}&{% endif %}{% if filters.has_email %}has_email={{ filters.has_email }}&{% endif %}hide_added={{ filters.hide_added }}&page={{ page.next_page_number }}" class="text-cc-royal hover:underline">next</a>
+        · <a href="?{% if filters.q %}q={{ filters.q }}&{% endif %}{% if filters.source %}source={{ filters.source }}&{% endif %}{% if filters.classification %}classification={{ filters.classification }}&{% endif %}{% if filters.has_email %}has_email={{ filters.has_email }}&{% endif %}hide_added={{ filters.hide_added }}&page={{ page.next_page_number }}" class="text-cc-royal hover:underline">next</a>
       {% endif %}
     </div>
     <button type="submit" class="cc-btn cc-btn-primary">Add selected to {{ project.study_code }}</button>

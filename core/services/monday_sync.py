@@ -43,6 +43,14 @@ REPLY_INTENT_LABELS = [
     {'label': 'Alternate Email Provided', 'index': 5, 'color': 'purple'},
 ]
 
+CLASSIFICATION_LABELS = [
+    {'label': 'Unclassified', 'index': 1, 'color': 'working_orange'},
+    {'label': 'Metabolic Clinic', 'index': 2, 'color': 'bright_blue'},
+    {'label': 'Genetic Counselor', 'index': 3, 'color': 'dark_blue'},
+    {'label': 'Advocacy Organization', 'index': 4, 'color': 'done_green'},
+    {'label': 'Community Provider', 'index': 5, 'color': 'egg_yolk'},
+]
+
 
 def _sync_user(project: Project, explicit_user=None):
     if explicit_user and _has_monday_token(explicit_user):
@@ -196,6 +204,10 @@ def _role_specialty(lead: Lead) -> str:
     return ' | '.join(bits)[:255]
 
 
+def _classification_label(lead: Lead) -> str:
+    return lead.get_classification_display()
+
+
 def _referral_link(project_lead: ProjectLead) -> str:
     return f"{settings.APP_BASE_URL.rstrip('/')}/r/{project_lead.tracking_token}"
 
@@ -225,6 +237,8 @@ def _column_values(project_lead: ProjectLead, columns: dict) -> dict:
         values[columns['organization']] = lead.organization or ''
     if columns.get('role_specialty'):
         values[columns['role_specialty']] = _role_specialty(lead)
+    if columns.get('classification'):
+        values[columns['classification']] = {'label': _classification_label(lead)}
     if columns.get('email') and lead.email:
         values[columns['email']] = {'email': lead.email, 'text': lead.email}
     if columns.get('source_directory'):
@@ -295,6 +309,14 @@ def _ensure_board_schema(user, board_id: str) -> dict:
 
     if not mapping.get('sequence_step'):
         monday_client.create_column(user, board_id, title='Sequence Step', column_type='text')
+    if not mapping.get('classification'):
+        monday_client.create_column(
+            user,
+            board_id,
+            title='Contact Type',
+            column_type='status',
+            defaults={'labels': CLASSIFICATION_LABELS},
+        )
     if not mapping.get('human_action_needed'):
         monday_client.create_column(
             user,
@@ -398,6 +420,8 @@ def sync_lead_everywhere(lead: Lead, *, user=None) -> list[dict]:
                 origin_values[columns['organization']] = lead.organization or ''
             if columns.get('role_specialty'):
                 origin_values[columns['role_specialty']] = _role_specialty(lead)
+            if columns.get('classification'):
+                origin_values[columns['classification']] = {'label': _classification_label(lead)}
             if columns.get('email') and lead.email:
                 origin_values[columns['email']] = {'email': lead.email, 'text': lead.email}
             if origin_values:
@@ -420,6 +444,7 @@ BRIDGE_BOARD_COLUMNS = [
     ('Contact Name', 'text'),
     ('Organization', 'text'),
     ('Role / Specialty', 'text'),
+    ('Contact Type', 'status'),
     ('Email', 'email'),
     ('Source Directory', 'status'),
     ('Campaign Status', 'status'),
@@ -454,7 +479,9 @@ def provision_project_board(project: Project, *, user=None) -> dict:
     for title, column_type in BRIDGE_BOARD_COLUMNS:
         try:
             defaults = None
-            if title == 'Human Action Needed':
+            if title == 'Contact Type':
+                defaults = {'labels': CLASSIFICATION_LABELS}
+            elif title == 'Human Action Needed':
                 defaults = {'labels': HUMAN_ACTION_LABELS}
             elif title == 'Reply Intent':
                 defaults = {'labels': REPLY_INTENT_LABELS}

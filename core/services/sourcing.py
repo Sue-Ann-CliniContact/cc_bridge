@@ -97,6 +97,68 @@ def _merge_geography(existing_geo: dict, incoming_geo: dict) -> dict:
     return merged
 
 
+def _text_chunks(*values) -> str:
+    chunks: list[str] = []
+    for value in values:
+        if isinstance(value, str) and value.strip():
+            chunks.append(value.strip().lower())
+        elif isinstance(value, dict):
+            chunks.append(_text_chunks(*value.values()))
+        elif isinstance(value, (list, tuple, set)):
+            chunks.append(_text_chunks(*list(value)))
+    return ' '.join(chunk for chunk in chunks if chunk)
+
+
+def infer_lead_classification(*, organization: str = '', role: str = '', specialty: str = '', contact_url: str = '', geography: dict | None = None) -> str:
+    text = _text_chunks(organization, role, specialty, contact_url, geography or {})
+
+    advocacy_terms = (
+        'advocacy', 'foundation', 'society', 'association', 'alliance', 'network',
+        'support group', 'support organization', 'nonprofit', 'non-profit',
+        'rare disease org', 'patient org', 'faod', 'fatty acid oxidation',
+    )
+    counselor_terms = (
+        'genetic counselor', 'genetic counselling', 'genetic counseling',
+        'licensed genetic counselor', 'cgc',
+    )
+    metabolic_terms = (
+        'metabolic clinic', 'metabolism', 'genetics clinic', 'genetic clinic',
+        'biochemical genetics', 'clinical biochemical genetics',
+        'inherited metabolic', 'metabolic genetics', 'metabolic specialist',
+        'rare disease clinic', 'division of genetics', 'division of metabolism',
+        'genetics and metabolism',
+    )
+    provider_terms = (
+        'md', 'do', 'physician', 'provider', 'pediatrician', 'pediatrics', 'neurology',
+        'clinical genetics', 'hospital', 'medical center', 'clinic', 'health system',
+        'nurse practitioner', 'pa-c', 'community provider',
+    )
+
+    if any(term in text for term in advocacy_terms):
+        return Lead.CLASS_ADVOCACY_ORG
+    if any(term in text for term in counselor_terms):
+        return Lead.CLASS_GENETIC_COUNSELOR
+    if any(term in text for term in metabolic_terms):
+        return Lead.CLASS_METABOLIC_CLINIC
+    if any(term in text for term in provider_terms):
+        return Lead.CLASS_COMMUNITY_PROVIDER
+    return Lead.CLASS_UNCLASSIFIED
+
+
+def _candidate_classification(candidate: dict) -> str:
+    explicit = (candidate.get('classification') or '').strip()
+    valid = {choice for choice, _label in Lead.CLASSIFICATION_CHOICES}
+    if explicit in valid:
+        return explicit
+    return infer_lead_classification(
+        organization=candidate.get('organization', ''),
+        role=candidate.get('role', ''),
+        specialty=candidate.get('specialty', ''),
+        contact_url=candidate.get('contact_url', ''),
+        geography=candidate.get('geography') or {},
+    )
+
+
 def _merge_candidate_into_existing(
     lead: Lead,
     candidate: dict,
@@ -121,6 +183,14 @@ def _merge_candidate_into_existing(
     if merged_geo != (lead.geography or {}):
         lead.geography = merged_geo
         update_fields.add('geography')
+
+    candidate_classification = _candidate_classification({**candidate, 'geography': merged_geo})
+    if (
+        candidate_classification != Lead.CLASS_UNCLASSIFIED
+        and lead.classification in ('', Lead.CLASS_UNCLASSIFIED)
+    ):
+        lead.classification = candidate_classification
+        update_fields.add('classification')
 
     if default_enrichment == Lead.ENRICHMENT_COMPLETE and lead.email and lead.enrichment_status != Lead.ENRICHMENT_COMPLETE:
         lead.enrichment_status = Lead.ENRICHMENT_COMPLETE
@@ -195,6 +265,7 @@ def _persist_candidate(candidate: dict, default_source: str, default_enrichment:
         specialty=candidate.get('specialty', ''),
         contact_url=(candidate.get('contact_url') or '').strip(),
         linkedin_url=(candidate.get('linkedin_url') or '').strip(),
+        classification=_candidate_classification(candidate),
         geography=candidate.get('geography', {}) or {},
         source=default_source,
         enrichment_status=default_enrichment,
@@ -228,6 +299,14 @@ def resolve_conflict(lead: Lead, action: str) -> Lead:
             val = (incoming.get(field) or '').strip()
             if val:
                 setattr(lead, field, val)
+        if lead.classification in ('', Lead.CLASS_UNCLASSIFIED):
+            lead.classification = infer_lead_classification(
+                organization=lead.organization,
+                role=lead.role,
+                specialty=lead.specialty,
+                contact_url=lead.contact_url,
+                geography=lead.geography or {},
+            )
     lead.pending_conflict = None
     lead.save()
     return lead
@@ -756,6 +835,17 @@ def enrich_clinician_via_web(lead: Lead, *, user=None) -> dict:
             lead.geography = new_geo
             update_fields.add('geography')
 
+    inferred_classification = infer_lead_classification(
+        organization=lead.organization,
+        role=lead.role,
+        specialty=lead.specialty,
+        contact_url=lead.contact_url,
+        geography=lead.geography or {},
+    )
+    if lead.classification in ('', Lead.CLASS_UNCLASSIFIED) and inferred_classification != Lead.CLASS_UNCLASSIFIED:
+        lead.classification = inferred_classification
+        update_fields.add('classification')
+
     lead.enrichment_status = Lead.ENRICHMENT_COMPLETE if lead.email else Lead.ENRICHMENT_FAILED
     update_fields.add('enrichment_status')
     update_fields.add('updated_at')
@@ -829,6 +919,17 @@ def enrich_lead_with_apollo(lead: Lead, *, user=None) -> dict:
         lead.geography = {**(lead.geography or {}), 'state': match['state']}
         if 'geography' not in updated_fields:
             updated_fields.append('geography')
+
+    inferred_classification = infer_lead_classification(
+        organization=lead.organization,
+        role=lead.role,
+        specialty=lead.specialty,
+        contact_url=lead.contact_url,
+        geography=lead.geography or {},
+    )
+    if lead.classification in ('', Lead.CLASS_UNCLASSIFIED) and inferred_classification != Lead.CLASS_UNCLASSIFIED:
+        lead.classification = inferred_classification
+        updated_fields.append('classification')
 
     lead.enrichment_status = Lead.ENRICHMENT_COMPLETE if lead.email else Lead.ENRICHMENT_FAILED
     lead.save(update_fields=list(set(updated_fields)))

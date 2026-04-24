@@ -34,12 +34,38 @@
     <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
       <div>
         <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Available leads</h2>
-        <p class="mt-1 text-xs text-cc-muted">Leads on this project, with an email, not already on a campaign.</p>
+        <p class="mt-1 text-xs text-cc-muted">Leads on this project, with an email, not already on a campaign. Filter by Bridge classification to build more targeted campaigns.</p>
       </div>
       <div class="text-xs text-cc-muted">
         <label class="flex items-center gap-2">
           <input type="checkbox" id="selectAll"> Select all
         </label>
+      </div>
+    </div>
+
+    <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+      <div class="flex flex-wrap items-end gap-3">
+        <div>
+          <label class="cc-label">Classification</label>
+          <select id="classificationFilter" class="cc-input">
+            <option value="">All classified leads</option>
+            {% for summary in classification_summaries %}
+              <option value="{{ summary.value }}" {% if summary.value == classification_filter %}selected{% endif %}>
+                {{ summary.label }}{% if summary.total %} ({{ summary.total }}){% endif %}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="button" id="applyClassificationFilter" class="cc-btn cc-btn-ghost">Apply</button>
+      </div>
+      <div class="mt-2 flex flex-wrap gap-2 text-xs">
+        {% for summary in classification_summaries %}
+          {% if summary.total %}
+            <a href="?classification={{ summary.value }}" class="cc-chip {% if summary.value == classification_filter %}ok{% else %}muted{% endif %}">
+              {{ summary.label }} · {{ summary.total }}
+            </a>
+          {% endif %}
+        {% endfor %}
       </div>
     </div>
 
@@ -49,6 +75,7 @@
           <th class="px-4 py-3 w-10"></th>
           <th class="px-4 py-3 text-left">Name</th>
           <th class="px-4 py-3 text-left">Organization</th>
+          <th class="px-4 py-3 text-left">Classification</th>
           <th class="px-4 py-3 text-left">Email</th>
           <th class="px-4 py-3 text-left">Role</th>
           <th class="px-4 py-3 text-left">Source</th>
@@ -60,12 +87,13 @@
             <td class="px-4 py-3"><input type="checkbox" name="project_lead_ids" value="{{ pl.pk }}" class="row-select"></td>
             <td class="px-4 py-3 font-medium text-cc-ink">{{ pl.lead.first_name }} {{ pl.lead.last_name }}</td>
             <td class="px-4 py-3 text-cc-muted">{{ pl.lead.organization|default:"—" }}</td>
+            <td class="px-4 py-3"><span class="cc-chip muted text-[10px]">{{ pl.lead.get_classification_display }}</span></td>
             <td class="px-4 py-3 text-cc-ink">{{ pl.lead.email }}</td>
             <td class="px-4 py-3 text-cc-muted">{{ pl.lead.role|default:"—" }}</td>
             <td class="px-4 py-3"><span class="cc-chip muted text-[10px]">{{ pl.lead.get_source_display }}</span></td>
           </tr>
         {% empty %}
-          <tr><td colspan="6" class="px-4 py-12 text-center text-cc-muted text-sm">
+          <tr><td colspan="7" class="px-4 py-12 text-center text-cc-muted text-sm">
             No eligible leads. Add leads with emails from the Review page first.
           </td></tr>
         {% endfor %}
@@ -84,6 +112,20 @@ const selectAll = document.getElementById('selectAll');
 if (selectAll) {
   selectAll.addEventListener('change', (e) => {
     document.querySelectorAll('.row-select').forEach(cb => cb.checked = e.target.checked);
+  });
+}
+
+const classificationFilter = document.getElementById('classificationFilter');
+const applyClassificationFilter = document.getElementById('applyClassificationFilter');
+if (classificationFilter && applyClassificationFilter) {
+  applyClassificationFilter.addEventListener('click', () => {
+    const url = new URL(window.location.href);
+    if (classificationFilter.value) {
+      url.searchParams.set('classification', classificationFilter.value);
+    } else {
+      url.searchParams.delete('classification');
+    }
+    window.location.href = url.toString();
   });
 }
 </script>

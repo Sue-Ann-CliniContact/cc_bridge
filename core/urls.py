@@ -41,6 +41,8 @@ urlpatterns = [
     path('campaigns/<int:campaign_id>/', views.campaign_detail, name='campaign_detail'),
     path('campaigns/<int:campaign_id>/redraft/', views.campaign_redraft, name='campaign_redraft'),
     path('campaigns/<int:campaign_id>/update-sequence/', views.campaign_update_sequence, name='campaign_update_sequence'),
+    path('campaigns/<int:campaign_id>/add-leads/', views.campaign_add_leads, name='campaign_add_leads'),
+    path('campaigns/<int:campaign_id>/remove-lead/<int:project_lead_id>/', views.campaign_remove_lead, name='campaign_remove_lead'),
     path('campaigns/<int:campaign_id>/launch/', views.campaign_launch, name='campaign_launch'),
 
     # Instantly webhook

@@ -610,6 +610,16 @@ def campaign_create(request, project_id):
 def campaign_detail(request, campaign_id):
     campaign = get_object_or_404(Campaign.objects.select_related('project'), pk=campaign_id)
     project_leads = campaign.project_leads.select_related('lead').order_by('-created_at')
+    editable_statuses = {Campaign.STATUS_DRAFT, Campaign.STATUS_AWAITING_APPROVAL, Campaign.STATUS_PAUSED}
+    can_manage_leads = campaign.status in editable_statuses
+    available_project_leads = (
+        ProjectLead.objects
+        .filter(project=campaign.project, campaign__isnull=True)
+        .exclude(lead__email__isnull=True)
+        .exclude(lead__email='')
+        .select_related('lead')
+        .order_by('-created_at')
+    ) if can_manage_leads else ProjectLead.objects.none()
 
     sending_accounts = []
     if django_settings.INSTANTLY_API_KEY:
@@ -622,6 +632,8 @@ def campaign_detail(request, campaign_id):
         'campaign': campaign,
         'project': campaign.project,
         'project_leads': project_leads,
+        'available_project_leads': available_project_leads,
+        'can_manage_leads': can_manage_leads,
         'sending_accounts': sending_accounts,
         'sequence_steps': campaign.sequence_config or [],
     })
@@ -665,6 +677,53 @@ def campaign_update_sequence(request, campaign_id):
         })
     campaigns_service.update_sequence(campaign, steps=steps)
     messages.success(request, 'Sequence saved.')
+    return redirect('campaign_detail', campaign_id=campaign.pk)
+
+
+@login_required
+@require_POST
+def campaign_add_leads(request, campaign_id):
+    campaign = get_object_or_404(Campaign.objects.select_related('project'), pk=campaign_id)
+    if campaign.status not in (Campaign.STATUS_DRAFT, Campaign.STATUS_AWAITING_APPROVAL, Campaign.STATUS_PAUSED):
+        messages.error(request, 'Leads can only be changed while the campaign is still editable.')
+        return redirect('campaign_detail', campaign_id=campaign.pk)
+
+    project_lead_ids = [int(x) for x in request.POST.getlist('project_lead_ids') if x.isdigit()]
+    if not project_lead_ids:
+        messages.warning(request, 'Select at least one project lead to add.')
+        return redirect('campaign_detail', campaign_id=campaign.pk)
+
+    attachable = list(
+        ProjectLead.objects
+        .filter(project=campaign.project, pk__in=project_lead_ids, campaign__isnull=True)
+        .select_related('project', 'lead')
+    )
+    ProjectLead.objects.filter(pk__in=[pl.pk for pl in attachable]).update(campaign=campaign)
+    updated_rows = list(ProjectLead.objects.filter(pk__in=[pl.pk for pl in attachable]).select_related('project', 'lead'))
+    if updated_rows:
+        monday_sync.sync_project_leads(updated_rows, user=request.user)
+    messages.success(request, f'Added {len(updated_rows)} lead{"s" if len(updated_rows) != 1 else ""} to {campaign.name}.')
+    return redirect('campaign_detail', campaign_id=campaign.pk)
+
+
+@login_required
+@require_POST
+def campaign_remove_lead(request, campaign_id, project_lead_id):
+    campaign = get_object_or_404(Campaign.objects.select_related('project'), pk=campaign_id)
+    if campaign.status not in (Campaign.STATUS_DRAFT, Campaign.STATUS_AWAITING_APPROVAL, Campaign.STATUS_PAUSED):
+        messages.error(request, 'Leads can only be removed while the campaign is still editable.')
+        return redirect('campaign_detail', campaign_id=campaign.pk)
+
+    project_lead = get_object_or_404(
+        ProjectLead.objects.select_related('project', 'lead'),
+        pk=project_lead_id,
+        campaign=campaign,
+    )
+    project_lead.campaign = None
+    project_lead.campaign_status = ProjectLead.STATUS_QUEUED
+    project_lead.save(update_fields=['campaign', 'campaign_status', 'updated_at'])
+    monday_sync.sync_project_lead(project_lead, user=request.user)
+    messages.success(request, f'Removed {project_lead.lead} from {campaign.name}.')
     return redirect('campaign_detail', campaign_id=campaign.pk)
 
 

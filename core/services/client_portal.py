@@ -270,6 +270,7 @@ def project_client_snapshot(project: Project, *, user=None) -> dict:
         'client_visible_count': board_snapshot['client_visible_count'],
         'campaign_cards': [
             {
+                'id': campaign.pk,
                 'name': campaign.name,
                 'status': campaign.get_status_display(),
                 'lead_count': campaign.project_leads.count(),

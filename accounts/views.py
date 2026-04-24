@@ -17,7 +17,7 @@ MONDAY_API_URL = 'https://api.monday.com/v2'
 
 def login_page(request):
     if request.user.is_authenticated:
-        return redirect('dashboard')
+        return redirect('client_dashboard')
     return render(request, 'accounts/login.html')
 
 
@@ -113,7 +113,7 @@ def monday_callback(request):
     )
 
     login(request, user)
-    return redirect('dashboard')
+    return redirect('client_dashboard')
 
 
 def logout_view(request):

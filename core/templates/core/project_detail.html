@@ -2,252 +2,484 @@
 {% block title %}{{ project.study_code }} · Bridge{% endblock %}
 
 {% block content %}
-<a href="{% url 'dashboard' %}" class="text-sm text-cc-muted hover:text-cc-royal">← Back to projects</a>
-
-<div class="mt-3 flex items-start justify-between">
-  <div>
-    <p class="text-xs font-bold uppercase tracking-wider text-cc-muted">{{ project.study_code }}</p>
-    <h1 class="mt-1 text-3xl font-black tracking-tight text-cc-ink">{{ project.name }}</h1>
-  </div>
-  <span class="cc-chip {% if project.status == 'active' %}ok{% elif project.status == 'draft' %}muted{% endif %}">
-    {{ project.get_status_display }}
-  </span>
-</div>
-
-{% if messages %}
-  <div class="mt-4 space-y-2">
-    {% for msg in messages %}
-      <div class="rounded-xl px-4 py-3 text-sm
-        {% if msg.level_tag == 'success' %}bg-emerald-50 text-emerald-700{% elif msg.level_tag == 'warning' %}bg-amber-50 text-amber-800{% elif msg.level_tag == 'error' %}bg-red-50 text-red-700{% else %}bg-slate-100 text-slate-700{% endif %}">
-        {{ msg }}
+<div class="portal-shell p-4 md:p-7">
+  <section class="portal-hero px-6 py-8 md:px-10 md:py-12">
+    <div class="grid gap-8 xl:grid-cols-[1.45fr_0.82fr] xl:items-center">
+      <div>
+        <a href="{% url 'dashboard' %}" class="inline-flex items-center text-sm text-white/75 hover:text-white">← Back to dashboard</a>
+        <div class="mt-5">
+          <span class="cc-chip bg-white/10 text-white border border-white/15">Project view</span>
+          <h1 class="mt-5 text-4xl font-black tracking-tight md:text-5xl">{{ project.study_code }} · {{ project.name }}</h1>
+          <p class="mt-4 max-w-3xl text-sm text-white/80 md:text-base">
+            Safe client analytics for outreach operations: board groups, statuses, contact types, sequence health, and only the leads deliberately marked client-visible on Monday.
+          </p>
+        </div>
       </div>
-    {% endfor %}
-  </div>
-{% endif %}
-
-<div class="grid gap-6 lg:grid-cols-3 mt-8">
-  <!-- Metadata -->
-  <section class="surface-card p-6 lg:col-span-1">
-    <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Details</h2>
-    <dl class="mt-4 space-y-3 text-sm">
-      <div><dt class="text-cc-muted">Horizon study ID</dt><dd class="text-cc-ink">{{ project.horizon_study_id|default:"—" }}</dd></div>
-      <div><dt class="text-cc-muted">Monday board</dt><dd class="text-cc-ink">{{ project.monday_board_id|default:"Not yet provisioned" }}</dd></div>
-      <div><dt class="text-cc-muted">Created by</dt><dd class="text-cc-ink">{{ project.created_by.get_full_name|default:project.created_by.username|default:"—" }}</dd></div>
-      <div><dt class="text-cc-muted">Created</dt><dd class="text-cc-ink">{{ project.created_at|date:"M j, Y" }}</dd></div>
-    </dl>
-    <div class="mt-6 pt-6 border-t border-slate-100 space-y-2">
-      <form method="post" action="{% url 'monday_provision_board' project.pk %}">
-        {% csrf_token %}
-        <button class="cc-btn cc-btn-ghost w-full justify-center">
-          {% if project.monday_board_id %}Recheck{% else %}Provision{% endif %} Monday board
-        </button>
-      </form>
-      <form method="post" action="{% url 'monday_sync_project' project.pk %}">
-        {% csrf_token %}
-        <button class="cc-btn cc-btn-ghost w-full justify-center">Sync all project leads to Monday</button>
-      </form>
-      <form method="post" action="{% url 'monday_pull_statuses' project.pk %}">
-        {% csrf_token %}
-        <button class="cc-btn cc-btn-ghost w-full justify-center">Pull Monday status changes</button>
-      </form>
-      <a href="{% url 'partner_profile_edit' project.pk %}" class="cc-btn cc-btn-ghost w-full justify-center">
-        {% if project.partner_profile %}Edit{% else %}Define{% endif %} partner profile
-      </a>
-      <a href="{% url 'lead_review' project.pk %}" class="cc-btn cc-btn-ghost w-full justify-center">
-        Review &amp; source leads
-      </a>
-      <a href="{% url 'campaign_create' project.pk %}" class="cc-btn cc-btn-primary w-full justify-center">
-        + New campaign
-      </a>
-    </div>
-
-    <div class="mt-4 pt-4 border-t border-slate-100">
-      <button id="btnTestInstantly" type="button" class="cc-btn cc-btn-ghost w-full justify-center">
-        Test Instantly connection
-      </button>
-      <div id="instantlyResult" class="mt-3 text-xs text-cc-muted"></div>
+      <div class="portal-panel p-5 md:p-6">
+        <p class="text-xs font-bold uppercase tracking-[0.35em] text-white/70">Board Snapshot</p>
+        <div class="mt-5 space-y-3">
+          <div class="rounded-2xl border border-white/10 bg-white/10 px-4 py-4">
+            <p class="text-xs uppercase tracking-[0.24em] text-white/60">Board ID</p>
+            <p class="mt-2 text-xl font-black">{{ client_snapshot.board_id|default:"Not connected" }}</p>
+          </div>
+          {% for stat in client_snapshot.headline_stats %}
+            <div class="rounded-2xl border border-white/10 bg-white/10 px-4 py-4">
+              <p class="text-xs uppercase tracking-[0.24em] text-white/60">{{ stat.label }}</p>
+              <p class="mt-2 text-3xl font-black">{{ stat.value }}</p>
+              <p class="mt-1 text-xs text-white/65">{{ stat.subtext }}</p>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
     </div>
   </section>
 
-  <!-- Assets -->
-  <section class="surface-card p-6 lg:col-span-2">
-    <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      <div class="rounded-2xl bg-slate-50 px-4 py-4">
-        <p class="text-xs font-bold uppercase tracking-wider text-cc-muted">Project Leads</p>
-        <p class="mt-2 text-3xl font-black text-cc-ink">{{ monday_dashboard.total_leads }}</p>
-        <p class="mt-1 text-xs text-cc-muted">{{ monday_dashboard.with_email }} with email</p>
-      </div>
-      <div class="rounded-2xl bg-slate-50 px-4 py-4">
-        <p class="text-xs font-bold uppercase tracking-wider text-cc-muted">Monday Synced</p>
-        <p class="mt-2 text-3xl font-black text-cc-ink">{{ monday_dashboard.on_monday }}</p>
-        <p class="mt-1 text-xs text-cc-muted">{% if project.monday_board_id %}Board {{ project.monday_board_id }}{% else %}No board yet{% endif %}</p>
-      </div>
-      <div class="rounded-2xl bg-slate-50 px-4 py-4">
-        <p class="text-xs font-bold uppercase tracking-wider text-cc-muted">Open Rate</p>
-        <p class="mt-2 text-3xl font-black text-cc-ink">{{ monday_dashboard.open_rate }}%</p>
-        <p class="mt-1 text-xs text-cc-muted">{{ monday_dashboard.opened }} opens from {{ monday_dashboard.sent }} sends</p>
-      </div>
-      <div class="rounded-2xl bg-slate-50 px-4 py-4">
-        <p class="text-xs font-bold uppercase tracking-wider text-cc-muted">Reply Rate</p>
-        <p class="mt-2 text-3xl font-black text-cc-ink">{{ monday_dashboard.reply_rate }}%</p>
-        <p class="mt-1 text-xs text-cc-muted">{{ monday_dashboard.replied }} replies · {{ monday_dashboard.bounced }} bounced</p>
-      </div>
+  {% if messages %}
+    <div class="mt-5 space-y-2">
+      {% for msg in messages %}
+        <div class="rounded-xl px-4 py-3 text-sm {% if msg.level_tag == 'success' %}bg-emerald-50 text-emerald-700{% elif msg.level_tag == 'warning' %}bg-amber-50 text-amber-800{% elif msg.level_tag == 'error' %}bg-red-50 text-red-700{% else %}bg-slate-100 text-slate-700{% endif %}">
+          {{ msg }}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <section class="surface-card mt-6 p-6 md:p-8">
+    <div class="border-b border-slate-100">
+      <a href="?tab=overview" class="portal-tab {% if active_tab == 'overview' %}active{% endif %}">Overview</a>
+      <a href="?tab=ai" class="portal-tab {% if active_tab == 'ai' %}active{% endif %}">AI</a>
+      <a href="?tab=handoffs" class="portal-tab {% if active_tab == 'handoffs' %}active{% endif %}">Client Visible</a>
+      {% if is_operator %}
+        <a href="?tab=operator" class="portal-tab {% if active_tab == 'operator' %}active{% endif %}">Operator</a>
+      {% endif %}
     </div>
 
-    <div class="mt-6 grid gap-4 lg:grid-cols-2">
-      <div class="rounded-2xl border border-slate-100 p-4">
-        <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Status Groups</h2>
-        <div class="mt-3 flex flex-wrap gap-2">
-          <span class="cc-chip muted">Queued {{ monday_dashboard.status_counts.queued|default:0 }}</span>
-          <span class="cc-chip muted">Sent {{ monday_dashboard.status_counts.sent|default:0 }}</span>
-          <span class="cc-chip muted">Opened {{ monday_dashboard.status_counts.opened|default:0 }}</span>
-          <span class="cc-chip muted">Clicked {{ monday_dashboard.status_counts.clicked|default:0 }}</span>
-          <span class="cc-chip ok">Replied {{ monday_dashboard.status_counts.replied|default:0 }}</span>
-          <span class="cc-chip warn">Interested {{ monday_dashboard.status_counts.interested|default:0 }}</span>
-          <span class="cc-chip warn">Not interested {{ monday_dashboard.status_counts.not_interested|default:0 }}</span>
-          <span class="cc-chip warn">Unsubscribed {{ monday_dashboard.status_counts.unsubscribed|default:0 }}</span>
+    {% if active_tab == 'ai' %}
+      <div class="mt-6 grid gap-6 xl:grid-cols-[1.05fr_0.7fr]">
+        <div class="portal-hero px-6 py-7 md:px-8">
+          <div class="grid gap-5 lg:grid-cols-[0.7fr_1fr]">
+            <div class="portal-panel min-h-[300px] p-6 flex items-center justify-center">
+              <div class="text-center text-white">
+                <div class="mx-auto h-24 w-24 rounded-[28px] bg-white/10 border border-white/20 flex items-center justify-center text-5xl">✦</div>
+                <p class="mt-4 text-xs uppercase tracking-[0.28em] text-white/65">Board AI Assistant</p>
+              </div>
+            </div>
+            <div class="rounded-[28px] bg-white p-6 shadow-2xl shadow-slate-900/10">
+              <div class="flex items-center justify-between gap-4">
+                <div>
+                  <p class="text-sm font-bold text-cc-royal">Lini, your project AI</p>
+                  <p class="mt-1 text-sm text-cc-muted">Ask about statuses, handoffs, contact-type mix, or sequence health using safe analytics only.</p>
+                </div>
+                <span class="cc-chip ok">Online</span>
+              </div>
+              <div class="mt-4 flex flex-wrap gap-2">
+                <button type="button" class="project-prompt cc-chip muted" data-question="Give me a concise summary of this project's current outreach performance.">Project summary</button>
+                <button type="button" class="project-prompt cc-chip muted" data-question="What stands out in the group, status, and contact-type breakdowns?">What stands out</button>
+                <button type="button" class="project-prompt cc-chip muted" data-question="What should the client pay attention to next in this project?">Next focus</button>
+              </div>
+              <div class="assistant-bubble mt-5 p-4 text-sm text-cc-muted">
+                Lini here is board-safe. Names, direct emails, and hidden lead details are excluded unless a row has been deliberately surfaced through the Client Visible workflow.
+              </div>
+              <form id="projectAiForm" class="mt-5 flex gap-3">
+                {% csrf_token %}
+                <input type="text" id="projectAiQuestion" class="cc-input" placeholder="e.g. Which statuses are growing most quickly?">
+                <button type="submit" class="cc-btn cc-btn-primary shrink-0">Ask AI</button>
+              </form>
+              <div id="projectAiAnswer" class="assistant-bubble mt-4 hidden p-4 text-sm text-cc-ink"></div>
+            </div>
+          </div>
+        </div>
+        <div class="grid gap-4">
+          <div class="metric-card p-5">
+            <p class="text-xs font-bold uppercase tracking-[0.24em] text-cc-muted">Privacy And Scope</p>
+            <h3 class="mt-3 text-3xl font-black tracking-tight text-cc-ink">Board-safe AI mode</h3>
+            <p class="mt-3 text-sm text-cc-muted">This assistant works only on sanitized project analytics fetched server-side at the time of the question.</p>
+          </div>
+          <div class="metric-card-soft p-5">
+            <p class="text-xs font-bold uppercase tracking-[0.24em] text-cc-muted">Included</p>
+            <p class="mt-3 text-sm text-cc-ink">Group counts, outreach statuses, contact types, sequence progress, campaign totals, and client-visible handoff counts.</p>
+          </div>
+          <div class="metric-card-soft p-5">
+            <p class="text-xs font-bold uppercase tracking-[0.24em] text-cc-muted">Excluded</p>
+            <p class="mt-3 text-sm text-cc-ink">Hidden lead names, direct email addresses, phone numbers, and raw lead review workflows.</p>
+          </div>
+          <div class="metric-card-soft p-5">
+            <p class="text-xs font-bold uppercase tracking-[0.24em] text-cc-muted">Protected</p>
+            <p class="mt-3 text-sm text-cc-ink">Board contents are treated as data only, not instructions, and responses stay constrained to the analytics snapshot.</p>
+          </div>
         </div>
       </div>
-      <div class="rounded-2xl border border-slate-100 p-4">
-        <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Campaign Rollup</h2>
-        <p class="mt-3 text-sm text-cc-ink">{{ monday_dashboard.campaign_count }} total campaign{{ monday_dashboard.campaign_count|pluralize }} · {{ monday_dashboard.active_campaign_count }} active</p>
-        <p class="mt-2 text-sm text-cc-ink">{{ monday_dashboard.opted_out }} opt-out event{{ monday_dashboard.opted_out|pluralize }} · {{ monday_dashboard.bounce_rate }}% bounce rate</p>
-        <p class="mt-2 text-xs text-cc-muted">Use “Sync all project leads to Monday” for existing leads already added before the Monday sync feature went live.</p>
+    {% elif active_tab == 'handoffs' %}
+      <div class="mt-6">
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <p class="text-xs font-bold uppercase tracking-[0.24em] text-cc-muted">Client Visible Leads</p>
+            <h2 class="mt-2 text-3xl font-black tracking-tight text-cc-ink">Study team handoffs and direct-contact rows</h2>
+            <p class="mt-2 text-sm text-cc-muted">These rows only appear when the Monday <strong>Client Visible</strong> checkbox is selected.</p>
+          </div>
+          <span class="cc-chip ok">{{ client_snapshot.client_visible_count }} visible</span>
+        </div>
+
+        {% if client_snapshot.client_visible_items %}
+          <div class="mt-5 grid gap-4 lg:grid-cols-2">
+            {% for item in client_snapshot.client_visible_items %}
+              <div class="metric-card p-5">
+                <div class="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 class="text-xl font-black text-cc-ink">{{ item.name }}</h3>
+                    <p class="mt-1 text-sm text-cc-muted">{{ item.organization|default:"—" }}</p>
+                  </div>
+                  <span class="cc-chip ok">{{ item.status|default:"Visible" }}</span>
+                </div>
+                <div class="mt-4 grid gap-2 text-sm">
+                  <div class="rounded-2xl bg-slate-50 px-3 py-3">
+                    <p class="text-xs font-bold uppercase tracking-[0.2em] text-cc-muted">Role / Contact Type</p>
+                    <p class="mt-1 text-cc-ink">{{ item.role|default:"—" }}</p>
+                  </div>
+                  <div class="rounded-2xl bg-slate-50 px-3 py-3">
+                    <p class="text-xs font-bold uppercase tracking-[0.2em] text-cc-muted">Interest / Group</p>
+                    <p class="mt-1 text-cc-ink">{% if item.interest %}{{ item.interest }}{% else %}{{ item.group|default:"—" }}{% endif %}</p>
+                  </div>
+                  <div class="rounded-2xl bg-slate-50 px-3 py-3">
+                    <p class="text-xs font-bold uppercase tracking-[0.2em] text-cc-muted">Next Action</p>
+                    <p class="mt-1 text-cc-ink">{{ item.next_action|default:"Awaiting study-team follow-up" }}</p>
+                  </div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="metric-card mt-5 p-8 text-center">
+            <h3 class="text-xl font-black text-cc-ink">No client-visible leads yet</h3>
+            <p class="mt-2 text-sm text-cc-muted">When the outreach team checks <strong>Client Visible</strong> on Monday for a handoff row, it will appear here automatically after sync.</p>
+          </div>
+        {% endif %}
       </div>
-    </div>
+    {% elif active_tab == 'operator' and is_operator %}
+      <div class="mt-6 grid gap-6 xl:grid-cols-[0.78fr_1.22fr]">
+        <section class="surface-card p-6">
+          <h2 class="text-sm font-bold uppercase tracking-[0.24em] text-cc-muted">Operator Controls</h2>
+          <dl class="mt-4 space-y-3 text-sm">
+            <div><dt class="text-cc-muted">Horizon study ID</dt><dd class="text-cc-ink">{{ project.horizon_study_id|default:"—" }}</dd></div>
+            <div><dt class="text-cc-muted">Monday board</dt><dd class="text-cc-ink">{{ project.monday_board_id|default:"Not yet provisioned" }}</dd></div>
+            <div><dt class="text-cc-muted">Created by</dt><dd class="text-cc-ink">{{ project.created_by.get_full_name|default:project.created_by.username|default:"—" }}</dd></div>
+            <div><dt class="text-cc-muted">Created</dt><dd class="text-cc-ink">{{ project.created_at|date:"M j, Y" }}</dd></div>
+          </dl>
+          <div class="mt-6 space-y-2">
+            <form method="post" action="{% url 'monday_provision_board' project.pk %}">{% csrf_token %}<button class="cc-btn cc-btn-ghost w-full justify-center">{% if project.monday_board_id %}Recheck{% else %}Provision{% endif %} Monday board</button></form>
+            <form method="post" action="{% url 'monday_sync_project' project.pk %}">{% csrf_token %}<button class="cc-btn cc-btn-ghost w-full justify-center">Sync all project leads to Monday</button></form>
+            <form method="post" action="{% url 'monday_pull_statuses' project.pk %}">{% csrf_token %}<button class="cc-btn cc-btn-ghost w-full justify-center">Pull Monday status changes</button></form>
+            <a href="{% url 'partner_profile_edit' project.pk %}" class="cc-btn cc-btn-ghost w-full justify-center">{% if project.partner_profile %}Edit{% else %}Define{% endif %} partner profile</a>
+            <a href="{% url 'lead_review' project.pk %}" class="cc-btn cc-btn-ghost w-full justify-center">Review &amp; source leads</a>
+            <a href="{% url 'campaign_create' project.pk %}" class="cc-btn cc-btn-primary w-full justify-center">+ New campaign</a>
+          </div>
+        </section>
+        <section class="surface-card p-6">
+          <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {% for stat in client_snapshot.performance_stats %}
+              <div class="rounded-2xl bg-slate-50 px-4 py-4">
+                <p class="text-xs font-bold uppercase tracking-wider text-cc-muted">{{ stat.label }}</p>
+                <p class="mt-2 text-3xl font-black text-cc-ink">{{ stat.value }}{{ stat.suffix|default:"" }}</p>
+                <p class="mt-1 text-xs text-cc-muted">{{ stat.subtext }}</p>
+              </div>
+            {% endfor %}
+          </div>
+          <div class="mt-6 rounded-2xl border border-slate-100 p-4">
+            <button id="btnTestInstantly" type="button" class="cc-btn cc-btn-ghost">Test Instantly connection</button>
+            <div id="instantlyResult" class="mt-3 text-xs text-cc-muted"></div>
+          </div>
+          <div class="mt-6 flex items-center justify-between">
+            <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Campaigns</h2>
+            <a href="{% url 'campaign_create' project.pk %}" class="text-xs text-cc-royal hover:underline">+ New</a>
+          </div>
+          {% if campaigns %}
+            <ul class="mt-3 divide-y divide-slate-100">
+              {% for c in campaigns %}
+                <li class="py-2.5 flex items-center justify-between gap-3">
+                  <a href="{% url 'campaign_detail' c.pk %}" class="min-w-0 flex-1 hover:underline">
+                    <p class="text-sm font-semibold text-cc-ink truncate">{{ c.name }}</p>
+                    <p class="text-xs text-cc-muted">{{ c.project_leads.count }} leads · {{ c.created_at|date:"M j" }}{% if c.started_at %} · launched {{ c.started_at|date:"M j" }}{% endif %}</p>
+                  </a>
+                  <span class="cc-chip {% if c.status == 'active' %}ok{% elif c.status == 'awaiting_approval' %}warn{% else %}muted{% endif %} text-[10px]">{{ c.get_status_display }}</span>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="mt-4 text-sm text-cc-muted">No campaigns yet.</p>
+          {% endif %}
 
-    <div class="flex items-center justify-between">
-      <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Study assets</h2>
-      <span class="cc-chip muted">{{ assets.count }}</span>
-    </div>
+          <div class="mt-8 pt-6 border-t border-slate-100">
+            <div class="flex items-center justify-between">
+              <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Study assets</h2>
+              <span class="cc-chip muted">{{ assets.count }}</span>
+            </div>
+            {% if assets %}
+              <ul class="mt-3 divide-y divide-slate-100">
+                {% for asset in assets %}
+                  <li class="py-3 flex items-start justify-between gap-4">
+                    <div class="min-w-0">
+                      <p class="text-sm font-semibold text-cc-ink">{{ asset.get_type_display }}{% if asset.subject %} — {{ asset.subject }}{% endif %}</p>
+                      {% if asset.content_text %}<p class="mt-1 text-xs text-cc-muted line-clamp-2">{{ asset.content_text|truncatewords:30 }}</p>{% endif %}
+                      {% if asset.content_url %}<a href="{{ asset.content_url }}" target="_blank" class="mt-1 inline-block text-xs text-cc-royal hover:underline break-all">{{ asset.content_url }}</a>{% endif %}
+                      {% if asset.content_file %}<a href="{{ asset.content_file.url }}" target="_blank" class="mt-1 inline-block text-xs text-cc-royal hover:underline">{{ asset.content_file.name|slice:"20:" }}</a>{% endif %}
+                    </div>
+                    <div class="flex flex-col items-end gap-2 shrink-0">
+                      {% if asset.is_approved %}
+                        <span class="cc-chip ok">Approved</span>
+                      {% else %}
+                        <form method="post" action="{% url 'asset_approve' asset.pk %}">{% csrf_token %}
+                          <button class="cc-btn cc-btn-ghost text-xs">Approve</button>
+                        </form>
+                      {% endif %}
+                      <span class="text-[11px] text-cc-muted">{{ asset.created_at|date:"M j" }}</span>
+                    </div>
+                  </li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <p class="mt-4 text-sm text-cc-muted">No assets uploaded yet.</p>
+            {% endif %}
 
-    {% if assets %}
-      <ul class="mt-4 divide-y divide-slate-100">
-        {% for asset in assets %}
-          <li class="py-3 flex items-start justify-between gap-4">
-            <div class="min-w-0">
-              <p class="text-sm font-semibold text-cc-ink">{{ asset.get_type_display }}{% if asset.subject %} — {{ asset.subject }}{% endif %}</p>
-              {% if asset.content_text %}<p class="mt-1 text-xs text-cc-muted line-clamp-2">{{ asset.content_text|truncatewords:30 }}</p>{% endif %}
-              {% if asset.content_url %}<a href="{{ asset.content_url }}" target="_blank" class="mt-1 inline-block text-xs text-cc-royal hover:underline break-all">{{ asset.content_url }}</a>{% endif %}
-              {% if asset.content_file %}<a href="{{ asset.content_file.url }}" target="_blank" class="mt-1 inline-block text-xs text-cc-royal hover:underline">{{ asset.content_file.name|slice:"20:" }}</a>{% endif %}
-            </div>
-            <div class="flex flex-col items-end gap-2 shrink-0">
-              {% if asset.is_approved %}
-                <span class="cc-chip ok">Approved</span>
-              {% else %}
-                <form method="post" action="{% url 'asset_approve' asset.pk %}">{% csrf_token %}
-                  <button class="cc-btn cc-btn-ghost text-xs">Approve</button>
-                </form>
-              {% endif %}
-              <span class="text-[11px] text-cc-muted">{{ asset.created_at|date:"M j" }}</span>
-            </div>
-          </li>
-        {% endfor %}
-      </ul>
+            <form method="post" enctype="multipart/form-data" action="{% url 'asset_upload' project.pk %}" class="mt-6 space-y-4">
+              {% csrf_token %}
+              <div class="grid gap-3 md:grid-cols-2">
+                <div><label class="cc-label">Asset type</label>{{ asset_form.type }}</div>
+                <div><label class="cc-label">Email subject</label>{{ asset_form.subject }}</div>
+              </div>
+              <div><label class="cc-label">Text content</label>{{ asset_form.content_text }}</div>
+              <div class="grid gap-3 md:grid-cols-2">
+                <div><label class="cc-label">Landing page URL</label>{{ asset_form.content_url }}</div>
+                <div><label class="cc-label">File (flyer)</label>{{ asset_form.content_file }}</div>
+              </div>
+              <div class="flex justify-end">
+                <button type="submit" class="cc-btn cc-btn-primary">Save asset</button>
+              </div>
+            </form>
+          </div>
+        </section>
+      </div>
     {% else %}
-      <p class="mt-4 text-sm text-cc-muted">No assets uploaded yet. Add the approved email copy, flyer, and landing page URL below.</p>
-    {% endif %}
-
-    <!-- Campaigns inline list -->
-    {% if campaigns %}
-      <div class="mt-6 pt-6 border-t border-slate-100">
-        <div class="flex items-center justify-between">
-          <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Campaigns</h2>
-          <a href="{% url 'campaign_create' project.pk %}" class="text-xs text-cc-royal hover:underline">+ New</a>
-        </div>
-        <ul class="mt-3 divide-y divide-slate-100">
-          {% for c in campaigns %}
-            <li class="py-2.5 flex items-center justify-between gap-3">
-              <a href="{% url 'campaign_detail' c.pk %}" class="min-w-0 flex-1 hover:underline">
-                <p class="text-sm font-semibold text-cc-ink truncate">{{ c.name }}</p>
-                <p class="text-xs text-cc-muted">
-                  {{ c.project_leads.count }} lead{{ c.project_leads.count|pluralize }} ·
-                  {{ c.created_at|date:"M j" }}
-                  {% if c.started_at %} · launched {{ c.started_at|date:"M j" }}{% endif %}
-                </p>
-              </a>
-              <span class="cc-chip {% if c.status == 'active' %}ok{% elif c.status == 'awaiting_approval' %}warn{% else %}muted{% endif %} text-[10px]">
-                {{ c.get_status_display }}
-              </span>
-            </li>
+      <div class="mt-6">
+        <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {% for stat in client_snapshot.performance_stats %}
+            <div class="metric-card px-5 py-5">
+              <p class="text-xs font-bold uppercase tracking-[0.24em] text-cc-muted">{{ stat.label }}</p>
+              <p class="mt-3 text-4xl font-black tracking-tight text-cc-ink">{{ stat.value }}{{ stat.suffix|default:"" }}</p>
+              <p class="mt-2 text-sm text-cc-muted">{{ stat.subtext }}</p>
+            </div>
           {% endfor %}
-        </ul>
+        </div>
+
+        <div class="mt-6 grid gap-5 xl:grid-cols-2">
+          <div class="metric-card p-5">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <p class="text-xs font-bold uppercase tracking-[0.24em] text-cc-royal">Breakdown</p>
+                <h3 class="mt-2 text-2xl font-black tracking-tight text-cc-ink">Group distribution</h3>
+              </div>
+              <span class="cc-chip muted">{{ client_snapshot.group_series|length }} groups</span>
+            </div>
+            <div class="mt-5 space-y-3">
+              {% for item in client_snapshot.group_series %}
+                <div class="series-row">
+                  <div class="min-w-0 text-sm font-medium text-cc-ink">{{ item.label }}</div>
+                  <div class="series-bar"><div class="series-bar-fill" style="width: {{ item.percent }}%; background: {{ item.color }};"></div></div>
+                  <div class="text-xs font-bold text-cc-muted">{{ item.value }}</div>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="metric-card p-5">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <p class="text-xs font-bold uppercase tracking-[0.24em] text-cc-royal">Breakdown</p>
+                <h3 class="mt-2 text-2xl font-black tracking-tight text-cc-ink">Outreach status</h3>
+              </div>
+              <span class="cc-chip muted">{{ client_snapshot.status_series|length }} statuses</span>
+            </div>
+            <div class="mt-5 space-y-3">
+              {% for item in client_snapshot.status_series %}
+                <div class="series-row">
+                  <div class="min-w-0 text-sm font-medium text-cc-ink">{{ item.label }}</div>
+                  <div class="series-bar"><div class="series-bar-fill" style="width: {{ item.percent }}%; background: {{ item.color }};"></div></div>
+                  <div class="text-xs font-bold text-cc-muted">{{ item.value }}</div>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="metric-card p-5">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <p class="text-xs font-bold uppercase tracking-[0.24em] text-cc-royal">Breakdown</p>
+                <h3 class="mt-2 text-2xl font-black tracking-tight text-cc-ink">Contact type mix</h3>
+              </div>
+              <span class="cc-chip muted">{{ client_snapshot.contact_type_series|length }} types</span>
+            </div>
+            <div class="mt-5 space-y-3">
+              {% for item in client_snapshot.contact_type_series %}
+                <div class="series-row">
+                  <div class="min-w-0 text-sm font-medium text-cc-ink">{{ item.label }}</div>
+                  <div class="series-bar"><div class="series-bar-fill" style="width: {{ item.percent }}%; background: {{ item.color }};"></div></div>
+                  <div class="text-xs font-bold text-cc-muted">{{ item.value }}</div>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="metric-card p-5">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <p class="text-xs font-bold uppercase tracking-[0.24em] text-cc-royal">Sequence</p>
+                <h3 class="mt-2 text-2xl font-black tracking-tight text-cc-ink">In-campaign and step view</h3>
+              </div>
+              <span class="cc-chip muted">{{ client_snapshot.headline_stats.2.value }} active</span>
+            </div>
+            <div class="mt-5 space-y-3">
+              {% for item in client_snapshot.sequence_series %}
+                <div class="series-row">
+                  <div class="min-w-0 text-sm font-medium text-cc-ink">{{ item.label }}</div>
+                  <div class="series-bar"><div class="series-bar-fill" style="width: {{ item.percent }}%; background: {{ item.color }};"></div></div>
+                  <div class="text-xs font-bold text-cc-muted">{{ item.value }}</div>
+                </div>
+              {% empty %}
+                <p class="text-sm text-cc-muted">Sequence step data will appear after campaigns are synced to Monday.</p>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-6 grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
+          <div class="metric-card p-5">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <p class="text-xs font-bold uppercase tracking-[0.24em] text-cc-royal">Activity Trend</p>
+                <h3 class="mt-2 text-2xl font-black tracking-tight text-cc-ink">Daily progression by event</h3>
+              </div>
+              <span class="cc-chip muted">{{ client_snapshot.trend_series|length }} days</span>
+            </div>
+            {% if client_snapshot.trend_series %}
+              <div class="trend-stack mt-6">
+                {% for day in client_snapshot.trend_series %}
+                  {% with total=day.sent|add:day.opened|add:day.replied|add:day.clicked %}
+                    <div class="trend-column">
+                      <div class="trend-segment" style="height: {% widthratio day.clicked 1 12 %}px; background: #a25ddc;"></div>
+                      <div class="trend-segment" style="height: {% widthratio day.replied 1 12 %}px; background: #43c59e;"></div>
+                      <div class="trend-segment" style="height: {% widthratio day.opened 1 12 %}px; background: #5ebeff;"></div>
+                      <div class="trend-segment" style="height: {% widthratio day.sent 1 12 %}px; background: #2550e6;"></div>
+                      <div class="pt-2 text-[10px] text-center text-cc-muted">{{ day.label|slice:"5:" }}</div>
+                    </div>
+                  {% endwith %}
+                {% endfor %}
+              </div>
+              <div class="mt-4 flex flex-wrap gap-3 text-xs text-cc-muted">
+                <span class="inline-flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-[#2550e6]"></span> Sent</span>
+                <span class="inline-flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-[#5ebeff]"></span> Opened</span>
+                <span class="inline-flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-[#43c59e]"></span> Replied</span>
+                <span class="inline-flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-[#a25ddc]"></span> Clicked</span>
+              </div>
+            {% else %}
+              <p class="mt-4 text-sm text-cc-muted">No outreach events logged yet.</p>
+            {% endif %}
+          </div>
+
+          <div class="grid gap-5">
+            <div class="metric-card p-5">
+              <p class="text-xs font-bold uppercase tracking-[0.24em] text-cc-royal">Project Rollup</p>
+              <h3 class="mt-2 text-2xl font-black tracking-tight text-cc-ink">Campaign snapshot</h3>
+              <div class="mt-4 space-y-2 text-sm">
+                {% for campaign in client_snapshot.campaign_cards %}
+                  <div class="rounded-2xl bg-slate-50 px-3 py-3">
+                    <div class="flex items-center justify-between gap-3">
+                      <span class="font-semibold text-cc-ink">{{ campaign.name }}</span>
+                      <span class="cc-chip muted">{{ campaign.status }}</span>
+                    </div>
+                    <p class="mt-1 text-xs text-cc-muted">{{ campaign.lead_count }} leads{% if campaign.started_at %} · launched {{ campaign.started_at|date:"M j" }}{% endif %}</p>
+                  </div>
+                {% empty %}
+                  <p class="text-sm text-cc-muted">No campaigns created yet.</p>
+                {% endfor %}
+              </div>
+            </div>
+
+            <div class="metric-card p-5">
+              <p class="text-xs font-bold uppercase tracking-[0.24em] text-cc-royal">Client Visibility</p>
+              <h3 class="mt-2 text-2xl font-black tracking-tight text-cc-ink">Handoff readiness</h3>
+              <p class="mt-3 text-sm text-cc-muted">{{ client_snapshot.client_visible_count }} rows are currently visible to the client through the Monday checkbox workflow.</p>
+              <a href="?tab=handoffs" class="cc-btn cc-btn-ghost mt-5">Open visible handoffs</a>
+            </div>
+          </div>
+        </div>
       </div>
     {% endif %}
-
-    {% if monday_dashboard.recent_project_leads %}
-      <div class="mt-6 pt-6 border-t border-slate-100">
-        <div class="flex items-center justify-between">
-          <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Recent Lead Status</h2>
-          <a href="{% url 'lead_review' project.pk %}" class="text-xs text-cc-royal hover:underline">Open lead review</a>
-        </div>
-        <ul class="mt-3 divide-y divide-slate-100">
-          {% for pl in monday_dashboard.recent_project_leads %}
-            <li class="py-2.5 flex items-center justify-between gap-3">
-              <div class="min-w-0">
-                <p class="text-sm font-semibold text-cc-ink truncate">{{ pl.lead }}</p>
-                <p class="text-xs text-cc-muted truncate">{{ pl.lead.organization|default:"—" }}{% if pl.lead.email %} · {{ pl.lead.email }}{% endif %}</p>
-              </div>
-              <div class="flex items-center gap-2 shrink-0">
-                {% if pl.monday_item_id %}<span class="cc-chip ok text-[10px]">Monday</span>{% endif %}
-                <span class="cc-chip muted text-[10px]">{{ pl.get_campaign_status_display }}</span>
-              </div>
-            </li>
-          {% endfor %}
-        </ul>
-      </div>
-    {% endif %}
-
-    <form method="post" enctype="multipart/form-data" action="{% url 'asset_upload' project.pk %}" class="mt-6 pt-6 border-t border-slate-100 space-y-4">
-      {% csrf_token %}
-      <div class="grid gap-3 md:grid-cols-2">
-        <div>
-          <label class="cc-label">Asset type</label>
-          {{ asset_form.type }}
-        </div>
-        <div>
-          <label class="cc-label">Email subject (email only)</label>
-          {{ asset_form.subject }}
-        </div>
-      </div>
-      <div>
-        <label class="cc-label">Text content</label>
-        {{ asset_form.content_text }}
-      </div>
-      <div class="grid gap-3 md:grid-cols-2">
-        <div>
-          <label class="cc-label">Landing page URL</label>
-          {{ asset_form.content_url }}
-        </div>
-        <div>
-          <label class="cc-label">File (flyer)</label>
-          {{ asset_form.content_file }}
-        </div>
-      </div>
-      <div class="flex justify-end">
-        <button type="submit" class="cc-btn cc-btn-primary">Save asset</button>
-      </div>
-    </form>
   </section>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-document.getElementById('btnTestInstantly').addEventListener('click', async () => {
-  const out = document.getElementById('instantlyResult');
-  out.textContent = 'Testing...';
-  try {
-    const res = await fetch("{% url 'test_instantly' %}", { credentials: 'same-origin' });
-    const data = await res.json();
-    if (data.ok) {
-      out.innerHTML = `<span class="cc-chip ok">Connected</span> ${data.campaigns_count} campaign${data.campaigns_count === 1 ? '' : 's'} visible`;
-    } else {
-      out.innerHTML = `<span class="cc-chip warn">Error</span> ${data.error}`;
+function getCsrfToken() {
+  return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+}
+
+const prompts = document.querySelectorAll('.project-prompt');
+const questionInput = document.getElementById('projectAiQuestion');
+const answerBox = document.getElementById('projectAiAnswer');
+const aiForm = document.getElementById('projectAiForm');
+
+prompts.forEach((button) => {
+  button.addEventListener('click', () => {
+    if (questionInput) {
+      questionInput.value = button.dataset.question || '';
+      questionInput.focus();
     }
-  } catch (e) {
-    out.innerHTML = `<span class="cc-chip warn">Request failed</span> ${e}`;
-  }
+  });
 });
+
+if (aiForm && questionInput && answerBox) {
+  aiForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const question = questionInput.value.trim();
+    if (!question) return;
+    answerBox.classList.remove('hidden');
+    answerBox.textContent = 'Lini is reviewing this project snapshot...';
+    try {
+      const body = new URLSearchParams({ question });
+      const response = await fetch("{% url 'project_ai' project.pk %}", {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'X-CSRFToken': getCsrfToken(),
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body,
+      });
+      const data = await response.json();
+      answerBox.textContent = data.ok ? data.answer : (data.error || 'AI request failed.');
+    } catch (error) {
+      answerBox.textContent = 'AI request failed.';
+    }
+  });
+}
+
+const instantlyButton = document.getElementById('btnTestInstantly');
+if (instantlyButton) {
+  instantlyButton.addEventListener('click', async () => {
+    const out = document.getElementById('instantlyResult');
+    out.textContent = 'Testing...';
+    try {
+      const res = await fetch("{% url 'test_instantly' %}", { credentials: 'same-origin' });
+      const data = await res.json();
+      if (data.ok) {
+        out.innerHTML = `<span class="cc-chip ok">Connected</span> ${data.campaigns_count} campaign${data.campaigns_count === 1 ? '' : 's'} visible`;
+      } else {
+        out.innerHTML = `<span class="cc-chip warn">Error</span> ${data.error}`;
+      }
+    } catch (error) {
+      out.innerHTML = `<span class="cc-chip warn">Request failed</span>`;
+    }
+  });
+}
 </script>
 {% endblock %}

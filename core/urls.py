@@ -4,8 +4,10 @@ from . import views
 
 urlpatterns = [
     path('dashboard/', views.dashboard, name='dashboard'),
+    path('dashboard/ai/', views.dashboard_ai, name='dashboard_ai'),
     path('projects/new/', views.project_create, name='project_create'),
     path('projects/<int:project_id>/', views.project_detail, name='project_detail'),
+    path('projects/<int:project_id>/ai/', views.project_ai, name='project_ai'),
     path('projects/<int:project_id>/monday/provision/', views.monday_provision_board, name='monday_provision_board'),
     path('projects/<int:project_id>/monday/sync/', views.monday_sync_project_view, name='monday_sync_project'),
     path('projects/<int:project_id>/monday/pull/', views.monday_pull_statuses_view, name='monday_pull_statuses'),

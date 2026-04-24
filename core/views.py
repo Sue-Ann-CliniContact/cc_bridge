@@ -7,6 +7,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db.models import Count, Exists, OuterRef, Q
+from django.http import HttpResponseForbidden
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -21,14 +22,20 @@ from integrations import monday_client
 from .forms import LeadEditForm, PartnerProfileForm, ProjectForm, StudyAssetForm
 from .models import Campaign, Lead, OptOut, OutreachEvent, PartnerProfile, Project, ProjectLead, StudyAsset
 from .services import campaigns as campaigns_service
+from .services import client_portal
 from .services import monday_sync
 from .services import sourcing
 
 
 @login_required
 def dashboard(request):
-    projects = Project.objects.all()[:50]
-    return render(request, 'core/dashboard.html', {'projects': projects})
+    projects = client_portal.visible_projects_for_user(request.user)
+    workspace_snapshot = client_portal.workspace_portal_snapshot(projects, user=request.user)
+    return render(request, 'core/dashboard.html', {
+        'projects': projects,
+        'workspace_snapshot': workspace_snapshot,
+        'is_operator': any(client_portal.is_operator(request.user, project) for project in projects) or request.user.is_staff,
+    })
 
 
 @login_required
@@ -48,14 +55,20 @@ def project_create(request):
 @login_required
 def project_detail(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
+    if not client_portal.user_can_access_project(request.user, project):
+        return HttpResponseForbidden('You do not have access to this project.')
     asset_form = StudyAssetForm()
     monday_dashboard = monday_sync.project_dashboard_snapshot(project)
+    client_snapshot = client_portal.project_client_snapshot(project, user=request.user)
     return render(request, 'core/project_detail.html', {
         'project': project,
         'assets': project.assets.all(),
         'asset_form': asset_form,
         'campaigns': project.campaigns.order_by('-created_at'),
         'monday_dashboard': monday_dashboard,
+        'client_snapshot': client_snapshot,
+        'is_operator': client_portal.is_operator(request.user, project),
+        'active_tab': request.GET.get('tab', 'overview'),
     })
 
 
@@ -131,6 +144,36 @@ def test_instantly(request):
     """Phase 1 sanity check: does the configured Instantly key return campaigns?"""
     result = instantly_client.ping()
     return JsonResponse(result)
+
+
+@login_required
+@require_POST
+def dashboard_ai(request):
+    question = (request.POST.get('question') or '').strip()
+    if not question:
+        return JsonResponse({'ok': False, 'error': 'Question is required.'}, status=400)
+    projects = client_portal.visible_projects_for_user(request.user)
+    try:
+        answer = client_portal.answer_workspace_question(projects, question, user=request.user)
+    except Exception as exc:  # noqa: BLE001
+        return JsonResponse({'ok': False, 'error': str(exc)}, status=500)
+    return JsonResponse({'ok': True, 'answer': answer})
+
+
+@login_required
+@require_POST
+def project_ai(request, project_id):
+    project = get_object_or_404(Project, pk=project_id)
+    if not client_portal.user_can_access_project(request.user, project):
+        return JsonResponse({'ok': False, 'error': 'Forbidden'}, status=403)
+    question = (request.POST.get('question') or '').strip()
+    if not question:
+        return JsonResponse({'ok': False, 'error': 'Question is required.'}, status=400)
+    try:
+        answer = client_portal.answer_project_question(project, question, user=request.user)
+    except Exception as exc:  # noqa: BLE001
+        return JsonResponse({'ok': False, 'error': str(exc)}, status=500)
+    return JsonResponse({'ok': True, 'answer': answer})
 
 
 @login_required

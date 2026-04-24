@@ -341,6 +341,8 @@ def _ensure_board_schema(user, board_id: str) -> dict:
         monday_client.create_column(user, board_id, title='Campaign Name', column_type='text')
     if not mapping.get('last_event_type'):
         monday_client.create_column(user, board_id, title='Last Event Type', column_type='text')
+    if not mapping.get('client_visible'):
+        monday_client.create_column(user, board_id, title='Client Visible', column_type='checkbox')
     if not mapping.get('notes'):
         monday_client.create_column(user, board_id, title='Notes', column_type='long_text')
 
@@ -460,6 +462,7 @@ BRIDGE_BOARD_COLUMNS = [
     ('Last Event Type', 'text'),
     ('Last Event', 'date'),
     ('Interest Level', 'status'),
+    ('Client Visible', 'checkbox'),
     ('Referral Link', 'link'),
     ('Referred Count', 'numbers'),
     ('Notes', 'long_text'),

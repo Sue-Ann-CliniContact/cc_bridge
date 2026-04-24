@@ -153,6 +153,7 @@ def bridge_column_map(columns: list[dict]) -> dict:
         'last_event_type': '',
         'last_event': '',
         'interest_level': '',
+        'client_visible': '',
         'referral_link': '',
         'referred_count': '',
         'notes': '',
@@ -197,6 +198,8 @@ def bridge_column_map(columns: list[dict]) -> dict:
             mapping['last_event'] = col_id
         elif 'interest' in title and not mapping['interest_level']:
             mapping['interest_level'] = col_id
+        elif 'client visible' in title and not mapping['client_visible']:
+            mapping['client_visible'] = col_id
         elif 'referral' in title and 'link' in title and not mapping['referral_link']:
             mapping['referral_link'] = col_id
         elif title == 'link' and not mapping['referral_link']:

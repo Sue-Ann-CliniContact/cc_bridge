@@ -145,7 +145,7 @@ class LeadEditForm(forms.ModelForm):
     class Meta:
         model = Lead
         fields = [
-            'first_name', 'last_name', 'email', 'phone', 'npi',
+            'first_name', 'last_name', 'email', 'organization_email', 'phone', 'npi',
             'organization', 'role', 'specialty', 'classification', 'contact_url', 'linkedin_url',
             'enrichment_status', 'global_opt_out', 'do_not_contact_reason',
         ]
@@ -153,6 +153,7 @@ class LeadEditForm(forms.ModelForm):
             'first_name': forms.TextInput(attrs={'class': 'cc-input'}),
             'last_name': forms.TextInput(attrs={'class': 'cc-input'}),
             'email': forms.EmailInput(attrs={'class': 'cc-input'}),
+            'organization_email': forms.EmailInput(attrs={'class': 'cc-input'}),
             'phone': forms.TextInput(attrs={'class': 'cc-input'}),
             'npi': forms.TextInput(attrs={'class': 'cc-input'}),
             'organization': forms.TextInput(attrs={'class': 'cc-input'}),

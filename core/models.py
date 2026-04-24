@@ -175,6 +175,7 @@ class Lead(models.Model):
     first_name = models.CharField(max_length=150, blank=True)
     last_name = models.CharField(max_length=150, blank=True)
     email = models.EmailField(max_length=255, blank=True, null=True, db_index=True)
+    organization_email = models.EmailField(max_length=255, blank=True, null=True)
     phone = models.CharField(max_length=50, blank=True)
     npi = models.CharField(max_length=20, blank=True, null=True, db_index=True)
     organization = models.CharField(max_length=255, blank=True)

@@ -241,6 +241,8 @@ def _column_values(project_lead: ProjectLead, columns: dict) -> dict:
         values[columns['classification']] = {'label': _classification_label(lead)}
     if columns.get('email') and lead.email:
         values[columns['email']] = {'email': lead.email, 'text': lead.email}
+    if columns.get('organization_email') and lead.organization_email:
+        values[columns['organization_email']] = {'email': lead.organization_email, 'text': lead.organization_email}
     if columns.get('source_directory'):
         values[columns['source_directory']] = {'label': lead.get_source_display()}
     if columns.get('campaign_status'):
@@ -424,6 +426,8 @@ def sync_lead_everywhere(lead: Lead, *, user=None) -> list[dict]:
                 origin_values[columns['classification']] = {'label': _classification_label(lead)}
             if columns.get('email') and lead.email:
                 origin_values[columns['email']] = {'email': lead.email, 'text': lead.email}
+            if columns.get('organization_email') and lead.organization_email:
+                origin_values[columns['organization_email']] = {'email': lead.organization_email, 'text': lead.organization_email}
             if origin_values:
                 monday_client.change_multiple_column_values(user, board_id, item_id, origin_values)
                 results.append({'ok': True, 'action': 'updated_origin_item', 'item_id': item_id})

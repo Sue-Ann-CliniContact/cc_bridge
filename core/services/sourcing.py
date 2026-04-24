@@ -168,7 +168,7 @@ def _merge_candidate_into_existing(
 ) -> Lead:
     update_fields = set()
     for field in (
-        'first_name', 'last_name', 'email', 'phone', 'npi',
+        'first_name', 'last_name', 'email', 'organization_email', 'phone', 'npi',
         'organization', 'role', 'specialty', 'contact_url', 'linkedin_url',
     ):
         incoming = (candidate.get(field) or '').strip()
@@ -242,6 +242,7 @@ def _persist_candidate(candidate: dict, default_source: str, default_enrichment:
                     'first_name': candidate.get('first_name', ''),
                     'last_name': candidate.get('last_name', ''),
                     'email': email or '',
+                    'organization_email': candidate.get('organization_email', ''),
                     'phone': candidate.get('phone', ''),
                     'npi': npi_val or '',
                     'organization': candidate.get('organization', ''),
@@ -258,6 +259,7 @@ def _persist_candidate(candidate: dict, default_source: str, default_enrichment:
         first_name=candidate.get('first_name', ''),
         last_name=candidate.get('last_name', ''),
         email=email,
+        organization_email=(candidate.get('organization_email') or '').strip() or None,
         phone=candidate.get('phone', ''),
         npi=npi_val,
         organization=candidate.get('organization', ''),
@@ -618,7 +620,7 @@ def import_from_monday_board(
     user,
 ) -> SourcingResult:
     """Fetch items from a Monday board and import them as Leads.
-    column_map keys: email, first_name, last_name, organization, role, phone, specialty.
+    column_map keys: email, organization_email, first_name, last_name, organization, role, phone, specialty.
     """
     result = SourcingResult(source='monday_import')
     try:
@@ -635,8 +637,13 @@ def import_from_monday_board(
         cvs = {cv.get('column', {}).get('id'): (cv.get('text') or '').strip() for cv in item.get('column_values') or []}
 
         email_raw = cvs.get(column_map.get('email', '')) or ''
+        organization_email_raw = cvs.get(column_map.get('organization_email', '')) or ''
         email_norm = email_raw.strip().lower() or None
+        organization_email_norm = organization_email_raw.strip().lower() or None
         if email_norm and email_norm in opted_out:
+            result.skipped_opted_out += 1
+            continue
+        if not email_norm and organization_email_norm and organization_email_norm in opted_out:
             result.skipped_opted_out += 1
             continue
 
@@ -652,6 +659,7 @@ def import_from_monday_board(
             'first_name': first,
             'last_name': last,
             'email': email_norm,
+            'organization_email': organization_email_norm,
             'phone': cvs.get(column_map.get('phone', '')) or '',
             'organization': cvs.get(column_map.get('organization', '')) or '',
             'role': cvs.get(column_map.get('role', '')) or '',

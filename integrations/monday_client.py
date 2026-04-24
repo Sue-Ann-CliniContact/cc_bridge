@@ -98,13 +98,26 @@ def list_board_items(user, board_id: str, limit: int = 500) -> dict:
 
 def auto_map_columns(columns: list[dict]) -> dict:
     """Guess which Monday columns correspond to email/name/org/etc. by title."""
-    mapping = {'email': '', 'first_name': '', 'last_name': '', 'organization': '', 'role': '', 'phone': '', 'specialty': ''}
+    mapping = {
+        'email': '',
+        'organization_email': '',
+        'first_name': '',
+        'last_name': '',
+        'organization': '',
+        'role': '',
+        'phone': '',
+        'specialty': '',
+    }
     for col in columns:
         title = (col.get('title') or '').strip().lower()
         col_id = col.get('id')
         if not col_id:
             continue
-        if 'email' in title and not mapping['email']:
+        if 'main contact email' in title and not mapping['email']:
+            mapping['email'] = col_id
+        elif ('email address' in title or ('generic' in title and 'email' in title)) and not mapping['organization_email']:
+            mapping['organization_email'] = col_id
+        elif 'email' in title and not mapping['email']:
             mapping['email'] = col_id
         elif 'phone' in title and not mapping['phone']:
             mapping['phone'] = col_id
@@ -129,6 +142,7 @@ def bridge_column_map(columns: list[dict]) -> dict:
         'role_specialty': '',
         'classification': '',
         'email': '',
+        'organization_email': '',
         'source_directory': '',
         'campaign_status': '',
         'sequence_step': '',
@@ -159,6 +173,8 @@ def bridge_column_map(columns: list[dict]) -> dict:
             mapping['role_specialty'] = col_id
         elif ('contact type' in title or 'classification' in title) and not mapping['classification']:
             mapping['classification'] = col_id
+        elif ('email address' in title or ('generic' in title and 'email' in title)) and not mapping['organization_email']:
+            mapping['organization_email'] = col_id
         elif ('email address' in title or 'main contact email' in title or title == 'email' or 'email' in title) and not mapping['email']:
             mapping['email'] = col_id
         elif 'source' in title and not mapping['source_directory']:

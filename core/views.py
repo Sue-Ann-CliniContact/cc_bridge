@@ -226,7 +226,7 @@ def monday_import_preview(request, project_id, board_id):
     if request.method == 'POST':
         column_map = {
             key: request.POST.get(f'col_{key}', '').strip()
-            for key in ('email', 'first_name', 'last_name', 'organization', 'role', 'phone', 'specialty')
+            for key in ('email', 'organization_email', 'first_name', 'last_name', 'organization', 'role', 'phone', 'specialty')
         }
         result = sourcing.import_from_monday_board(
             project,
@@ -251,7 +251,8 @@ def monday_import_preview(request, project_id, board_id):
         'items': payload.get('items') or [],
         'column_map': column_map,
         'mapped_keys': [
-            ('email', 'Email'),
+            ('email', 'Main contact email'),
+            ('organization_email', 'Generic / organization email'),
             ('first_name', 'First name'),
             ('last_name', 'Last name'),
             ('organization', 'Organization'),

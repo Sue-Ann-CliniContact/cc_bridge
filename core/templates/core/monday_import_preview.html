@@ -11,7 +11,7 @@
   {% csrf_token %}
   <div class="surface-card p-6">
     <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Column mapping</h2>
-    <p class="mt-1 text-xs text-cc-muted">We guessed based on column titles. Override any field below if needed. Leave blank to skip that field.</p>
+    <p class="mt-1 text-xs text-cc-muted">We guessed based on column titles. Bridge now keeps main contact emails separate from generic organization inboxes, so map both if your board has them.</p>
 
     <div class="mt-4 grid gap-4 md:grid-cols-2">
       {% for key, label in mapped_keys %}

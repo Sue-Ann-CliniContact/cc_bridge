@@ -141,23 +141,28 @@ def bridge_column_map(columns: list[dict]) -> dict:
         col_id = col.get('id')
         if not col_id:
             continue
-        if 'contact' in title and 'name' in title and not mapping['contact_name']:
+        if (
+            ('contact' in title and 'name' in title)
+            or title == 'contact person'
+        ) and not mapping['contact_name']:
             mapping['contact_name'] = col_id
-        elif ('organization' in title or 'company' in title) and not mapping['organization']:
+        elif ('organization' in title or 'company' in title or 'institution' in title) and not mapping['organization']:
             mapping['organization'] = col_id
-        elif ('role' in title or 'specialty' in title) and not mapping['role_specialty']:
+        elif ('role' in title or 'specialty' in title or 'position' in title) and not mapping['role_specialty']:
             mapping['role_specialty'] = col_id
-        elif 'email' in title and not mapping['email']:
+        elif ('email address' in title or 'main contact email' in title or title == 'email' or 'email' in title) and not mapping['email']:
             mapping['email'] = col_id
         elif 'source' in title and not mapping['source_directory']:
             mapping['source_directory'] = col_id
-        elif 'campaign status' in title and not mapping['campaign_status']:
+        elif ('campaign status' in title or 'outreach status' in title) and not mapping['campaign_status']:
             mapping['campaign_status'] = col_id
-        elif 'last event' in title and not mapping['last_event']:
+        elif ('last event' in title or 'date of last contact' in title) and not mapping['last_event']:
             mapping['last_event'] = col_id
         elif 'interest' in title and not mapping['interest_level']:
             mapping['interest_level'] = col_id
         elif 'referral' in title and 'link' in title and not mapping['referral_link']:
+            mapping['referral_link'] = col_id
+        elif title == 'link' and not mapping['referral_link']:
             mapping['referral_link'] = col_id
         elif 'referred' in title and 'count' in title and not mapping['referred_count']:
             mapping['referred_count'] = col_id

@@ -32,7 +32,19 @@ def _item_name_for_lead(lead: Lead) -> str:
 
 
 def _status_label(project_lead: ProjectLead) -> str:
-    return project_lead.get_campaign_status_display()
+    status = project_lead.campaign_status
+    label_map = {
+        ProjectLead.STATUS_QUEUED: 'Not Started',
+        ProjectLead.STATUS_SENT: 'Email Sent',
+        ProjectLead.STATUS_OPENED: 'Engaged',
+        ProjectLead.STATUS_CLICKED: 'Engaged',
+        ProjectLead.STATUS_REPLIED: 'Engaged',
+        ProjectLead.STATUS_INTERESTED: 'Handoff to Study Team',
+        ProjectLead.STATUS_NOT_INTERESTED: 'Not Started',
+        ProjectLead.STATUS_BOUNCED: 'Email Sent',
+        ProjectLead.STATUS_UNSUBSCRIBED: 'Not Started',
+    }
+    return label_map.get(status, project_lead.get_campaign_status_display())
 
 
 def _interest_label(project_lead: ProjectLead) -> str:
@@ -96,6 +108,10 @@ def _column_values(project_lead: ProjectLead, columns: dict) -> dict:
         values[columns['referred_count']] = project_lead.referred_count
     if columns.get('notes') and lead.do_not_contact_reason:
         values[columns['notes']] = lead.do_not_contact_reason
+    elif columns.get('notes'):
+        latest_event = project_lead.events.order_by('-timestamp').first()
+        if latest_event:
+            values[columns['notes']] = f'Latest Bridge event: {latest_event.get_event_type_display()}'
     return values
 
 

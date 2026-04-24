@@ -14,6 +14,17 @@
   </span>
 </div>
 
+{% if messages %}
+  <div class="mt-4 space-y-2">
+    {% for msg in messages %}
+      <div class="rounded-xl px-4 py-3 text-sm
+        {% if msg.level_tag == 'success' %}bg-emerald-50 text-emerald-700{% elif msg.level_tag == 'warning' %}bg-amber-50 text-amber-800{% elif msg.level_tag == 'error' %}bg-red-50 text-red-700{% else %}bg-slate-100 text-slate-700{% endif %}">
+        {{ msg }}
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}
+
 <div class="grid gap-6 lg:grid-cols-3 mt-8">
   <!-- Metadata -->
   <section class="surface-card p-6 lg:col-span-1">
@@ -25,6 +36,20 @@
       <div><dt class="text-cc-muted">Created</dt><dd class="text-cc-ink">{{ project.created_at|date:"M j, Y" }}</dd></div>
     </dl>
     <div class="mt-6 pt-6 border-t border-slate-100 space-y-2">
+      <form method="post" action="{% url 'monday_provision_board' project.pk %}">
+        {% csrf_token %}
+        <button class="cc-btn cc-btn-ghost w-full justify-center">
+          {% if project.monday_board_id %}Recheck{% else %}Provision{% endif %} Monday board
+        </button>
+      </form>
+      <form method="post" action="{% url 'monday_sync_project' project.pk %}">
+        {% csrf_token %}
+        <button class="cc-btn cc-btn-ghost w-full justify-center">Sync all project leads to Monday</button>
+      </form>
+      <form method="post" action="{% url 'monday_pull_statuses' project.pk %}">
+        {% csrf_token %}
+        <button class="cc-btn cc-btn-ghost w-full justify-center">Pull Monday status changes</button>
+      </form>
       <a href="{% url 'partner_profile_edit' project.pk %}" class="cc-btn cc-btn-ghost w-full justify-center">
         {% if project.partner_profile %}Edit{% else %}Define{% endif %} partner profile
       </a>
@@ -46,6 +71,51 @@
 
   <!-- Assets -->
   <section class="surface-card p-6 lg:col-span-2">
+    <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div class="rounded-2xl bg-slate-50 px-4 py-4">
+        <p class="text-xs font-bold uppercase tracking-wider text-cc-muted">Project Leads</p>
+        <p class="mt-2 text-3xl font-black text-cc-ink">{{ monday_dashboard.total_leads }}</p>
+        <p class="mt-1 text-xs text-cc-muted">{{ monday_dashboard.with_email }} with email</p>
+      </div>
+      <div class="rounded-2xl bg-slate-50 px-4 py-4">
+        <p class="text-xs font-bold uppercase tracking-wider text-cc-muted">Monday Synced</p>
+        <p class="mt-2 text-3xl font-black text-cc-ink">{{ monday_dashboard.on_monday }}</p>
+        <p class="mt-1 text-xs text-cc-muted">{% if project.monday_board_id %}Board {{ project.monday_board_id }}{% else %}No board yet{% endif %}</p>
+      </div>
+      <div class="rounded-2xl bg-slate-50 px-4 py-4">
+        <p class="text-xs font-bold uppercase tracking-wider text-cc-muted">Open Rate</p>
+        <p class="mt-2 text-3xl font-black text-cc-ink">{{ monday_dashboard.open_rate }}%</p>
+        <p class="mt-1 text-xs text-cc-muted">{{ monday_dashboard.opened }} opens from {{ monday_dashboard.sent }} sends</p>
+      </div>
+      <div class="rounded-2xl bg-slate-50 px-4 py-4">
+        <p class="text-xs font-bold uppercase tracking-wider text-cc-muted">Reply Rate</p>
+        <p class="mt-2 text-3xl font-black text-cc-ink">{{ monday_dashboard.reply_rate }}%</p>
+        <p class="mt-1 text-xs text-cc-muted">{{ monday_dashboard.replied }} replies · {{ monday_dashboard.bounced }} bounced</p>
+      </div>
+    </div>
+
+    <div class="mt-6 grid gap-4 lg:grid-cols-2">
+      <div class="rounded-2xl border border-slate-100 p-4">
+        <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Status Groups</h2>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <span class="cc-chip muted">Queued {{ monday_dashboard.status_counts.queued|default:0 }}</span>
+          <span class="cc-chip muted">Sent {{ monday_dashboard.status_counts.sent|default:0 }}</span>
+          <span class="cc-chip muted">Opened {{ monday_dashboard.status_counts.opened|default:0 }}</span>
+          <span class="cc-chip muted">Clicked {{ monday_dashboard.status_counts.clicked|default:0 }}</span>
+          <span class="cc-chip ok">Replied {{ monday_dashboard.status_counts.replied|default:0 }}</span>
+          <span class="cc-chip warn">Interested {{ monday_dashboard.status_counts.interested|default:0 }}</span>
+          <span class="cc-chip warn">Not interested {{ monday_dashboard.status_counts.not_interested|default:0 }}</span>
+          <span class="cc-chip warn">Unsubscribed {{ monday_dashboard.status_counts.unsubscribed|default:0 }}</span>
+        </div>
+      </div>
+      <div class="rounded-2xl border border-slate-100 p-4">
+        <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Campaign Rollup</h2>
+        <p class="mt-3 text-sm text-cc-ink">{{ monday_dashboard.campaign_count }} total campaign{{ monday_dashboard.campaign_count|pluralize }} · {{ monday_dashboard.active_campaign_count }} active</p>
+        <p class="mt-2 text-sm text-cc-ink">{{ monday_dashboard.opted_out }} opt-out event{{ monday_dashboard.opted_out|pluralize }} · {{ monday_dashboard.bounce_rate }}% bounce rate</p>
+        <p class="mt-2 text-xs text-cc-muted">Use “Sync all project leads to Monday” for existing leads already added before the Monday sync feature went live.</p>
+      </div>
+    </div>
+
     <div class="flex items-center justify-between">
       <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Study assets</h2>
       <span class="cc-chip muted">{{ assets.count }}</span>
@@ -99,6 +169,29 @@
               <span class="cc-chip {% if c.status == 'active' %}ok{% elif c.status == 'awaiting_approval' %}warn{% else %}muted{% endif %} text-[10px]">
                 {{ c.get_status_display }}
               </span>
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
+    {% if monday_dashboard.recent_project_leads %}
+      <div class="mt-6 pt-6 border-t border-slate-100">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Recent Lead Status</h2>
+          <a href="{% url 'lead_review' project.pk %}" class="text-xs text-cc-royal hover:underline">Open lead review</a>
+        </div>
+        <ul class="mt-3 divide-y divide-slate-100">
+          {% for pl in monday_dashboard.recent_project_leads %}
+            <li class="py-2.5 flex items-center justify-between gap-3">
+              <div class="min-w-0">
+                <p class="text-sm font-semibold text-cc-ink truncate">{{ pl.lead }}</p>
+                <p class="text-xs text-cc-muted truncate">{{ pl.lead.organization|default:"—" }}{% if pl.lead.email %} · {{ pl.lead.email }}{% endif %}</p>
+              </div>
+              <div class="flex items-center gap-2 shrink-0">
+                {% if pl.monday_item_id %}<span class="cc-chip ok text-[10px]">Monday</span>{% endif %}
+                <span class="cc-chip muted text-[10px]">{{ pl.get_campaign_status_display }}</span>
+              </div>
             </li>
           {% endfor %}
         </ul>

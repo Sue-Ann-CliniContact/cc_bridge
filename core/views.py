@@ -49,11 +49,13 @@ def project_create(request):
 def project_detail(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
     asset_form = StudyAssetForm()
+    monday_dashboard = monday_sync.project_dashboard_snapshot(project)
     return render(request, 'core/project_detail.html', {
         'project': project,
         'assets': project.assets.all(),
         'asset_form': asset_form,
         'campaigns': project.campaigns.order_by('-created_at'),
+        'monday_dashboard': monday_dashboard,
     })
 
 
@@ -77,6 +79,51 @@ def asset_approve(request, asset_id):
     asset.approved_at = timezone.now()
     asset.save(update_fields=['approved_by', 'approved_at', 'updated_at'])
     return redirect('project_detail', project_id=asset.project_id)
+
+
+@login_required
+@require_POST
+def monday_provision_board(request, project_id):
+    project = get_object_or_404(Project, pk=project_id)
+    result = monday_sync.provision_project_board(project, user=request.user)
+    if result.get('ok'):
+        note = f"Provisioned Monday board {result.get('board_id')}." if result.get('created') else f"Using existing Monday board {result.get('board_id')}."
+        messages.success(request, note)
+        if result.get('column_errors'):
+            messages.warning(request, 'Some columns could not be created: ' + '; '.join(result['column_errors'][:3]))
+    else:
+        messages.error(request, f"Monday board provisioning failed: {result.get('error', 'unknown error')}")
+    return redirect('project_detail', project_id=project.pk)
+
+
+@login_required
+@require_POST
+def monday_sync_project_view(request, project_id):
+    project = get_object_or_404(Project, pk=project_id)
+    result = monday_sync.sync_project(project, user=request.user)
+    if result.get('ok'):
+        messages.success(
+            request,
+            f"Monday sync complete: {result['created']} created, {result['updated']} updated, {result['failed']} failed."
+        )
+    else:
+        messages.error(request, f"Monday sync failed: {result.get('error', 'unknown error')}")
+    return redirect('project_detail', project_id=project.pk)
+
+
+@login_required
+@require_POST
+def monday_pull_statuses_view(request, project_id):
+    project = get_object_or_404(Project, pk=project_id)
+    result = monday_sync.pull_project_board_statuses(project, user=request.user)
+    if result.get('ok'):
+        messages.success(
+            request,
+            f"Pulled Monday updates: checked {result['items_checked']} items, applied {result['status_updates']} status changes."
+        )
+    else:
+        messages.error(request, f"Monday pull failed: {result.get('error', 'unknown error')}")
+    return redirect('project_detail', project_id=project.pk)
 
 
 @login_required

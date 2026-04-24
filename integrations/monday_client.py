@@ -199,3 +199,32 @@ def change_multiple_column_values(user, board_id: str, item_id: str, column_valu
     }
     data = graphql(user, query, variables)
     return (data.get('change_multiple_column_values') or {})
+
+
+def create_board(user, *, name: str, workspace_id: str | None = None, board_kind: str = 'public') -> dict:
+    wid = workspace_id or settings.MONDAY_WORKSPACE_ID
+    if not wid:
+        raise RuntimeError('MONDAY_WORKSPACE_ID not configured')
+    query = """
+    mutation ($boardName: String!, $workspaceId: ID!, $boardKind: BoardKind!) {
+      create_board(board_name: $boardName, workspace_id: $workspaceId, board_kind: $boardKind) {
+        id
+        name
+      }
+    }
+    """
+    data = graphql(user, query, {'boardName': name, 'workspaceId': wid, 'boardKind': board_kind})
+    return data.get('create_board') or {}
+
+
+def create_column(user, board_id: str, *, title: str, column_type: str) -> dict:
+    query = """
+    mutation ($boardId: ID!, $title: String!, $columnType: ColumnType!) {
+      create_column(board_id: $boardId, title: $title, column_type: $columnType) {
+        id
+        title
+      }
+    }
+    """
+    data = graphql(user, query, {'boardId': board_id, 'title': title, 'columnType': column_type})
+    return data.get('create_column') or {}

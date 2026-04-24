@@ -10,6 +10,7 @@ from django.db.models import Count, Exists, OuterRef, Q
 from django.http import HttpResponseForbidden
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
@@ -29,12 +30,24 @@ from .services import sourcing
 
 @login_required
 def dashboard(request):
+    return _render_dashboard(request, portal_mode=False)
+
+
+@login_required
+def client_dashboard(request):
+    return _render_dashboard(request, portal_mode=True)
+
+
+def _render_dashboard(request, *, portal_mode: bool):
     projects = client_portal.visible_projects_for_user(request.user)
     workspace_snapshot = client_portal.workspace_portal_snapshot(projects, user=request.user)
     return render(request, 'core/dashboard.html', {
         'projects': projects,
         'workspace_snapshot': workspace_snapshot,
         'is_operator': any(client_portal.is_operator(request.user, project) for project in projects) or request.user.is_staff,
+        'portal_mode': portal_mode,
+        'project_url_name': 'client_project_detail' if portal_mode else 'project_detail',
+        'dashboard_ai_url': reverse('client_dashboard_ai' if portal_mode else 'dashboard_ai'),
     })
 
 
@@ -54,6 +67,15 @@ def project_create(request):
 
 @login_required
 def project_detail(request, project_id):
+    return _render_project_detail(request, project_id, portal_mode=False)
+
+
+@login_required
+def client_project_detail(request, project_id):
+    return _render_project_detail(request, project_id, portal_mode=True)
+
+
+def _render_project_detail(request, project_id, *, portal_mode: bool):
     project = get_object_or_404(Project, pk=project_id)
     if not client_portal.user_can_access_project(request.user, project):
         return HttpResponseForbidden('You do not have access to this project.')
@@ -69,6 +91,9 @@ def project_detail(request, project_id):
         'client_snapshot': client_snapshot,
         'is_operator': client_portal.is_operator(request.user, project),
         'active_tab': request.GET.get('tab', 'overview'),
+        'portal_mode': portal_mode,
+        'dashboard_url': reverse('client_dashboard' if portal_mode else 'dashboard'),
+        'project_ai_url': reverse('client_project_ai' if portal_mode else 'project_ai', args=[project.pk]),
     })
 
 
@@ -149,6 +174,16 @@ def test_instantly(request):
 @login_required
 @require_POST
 def dashboard_ai(request):
+    return _dashboard_ai_response(request)
+
+
+@login_required
+@require_POST
+def client_dashboard_ai(request):
+    return _dashboard_ai_response(request)
+
+
+def _dashboard_ai_response(request):
     question = (request.POST.get('question') or '').strip()
     if not question:
         return JsonResponse({'ok': False, 'error': 'Question is required.'}, status=400)
@@ -163,6 +198,16 @@ def dashboard_ai(request):
 @login_required
 @require_POST
 def project_ai(request, project_id):
+    return _project_ai_response(request, project_id)
+
+
+@login_required
+@require_POST
+def client_project_ai(request, project_id):
+    return _project_ai_response(request, project_id)
+
+
+def _project_ai_response(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
     if not client_portal.user_can_access_project(request.user, project):
         return JsonResponse({'ok': False, 'error': 'Forbidden'}, status=403)
@@ -691,7 +736,7 @@ def webhook_instantly(request):
     if not project_lead:
         return JsonResponse({'ok': True, 'note': 'no matching ProjectLead', 'email': lead_email}, status=200)
 
-    OutreachEvent.objects.create(
+    event = OutreachEvent.objects.create(
         project_lead=project_lead,
         event_type=mapped_event,
         timestamp=ts,
@@ -701,6 +746,8 @@ def webhook_instantly(request):
     project_lead.campaign_status = mapped_status
     project_lead.save(update_fields=['campaign_status', 'updated_at'])
     monday_sync.sync_project_lead(project_lead)
+    if mapped_event in (OutreachEvent.EVENT_EMAIL_SENT, OutreachEvent.EVENT_EMAIL_REPLIED):
+        monday_sync.sync_event_update(project_lead, event)
 
     # Auto-opt-out on unsubscribe
     if event_type == 'lead_unsubscribed' and lead_email:

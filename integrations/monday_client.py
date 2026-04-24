@@ -302,3 +302,15 @@ def move_item_to_group(user, item_id: str, group_id: str) -> dict:
     """
     data = graphql(user, query, {'itemId': item_id, 'groupId': group_id})
     return data.get('move_item_to_group') or {}
+
+
+def create_update(user, item_id: str, body: str) -> dict:
+    query = """
+    mutation ($itemId: ID!, $body: String!) {
+      create_update(item_id: $itemId, body: $body) {
+        id
+      }
+    }
+    """
+    data = graphql(user, query, {'itemId': item_id, 'body': body})
+    return data.get('create_update') or {}

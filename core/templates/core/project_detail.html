@@ -6,7 +6,7 @@
   <section class="portal-hero px-6 py-8 md:px-10 md:py-12">
     <div class="grid gap-8 xl:grid-cols-[1.45fr_0.82fr] xl:items-center">
       <div>
-        <a href="{% url 'dashboard' %}" class="inline-flex items-center text-sm text-white/75 hover:text-white">← Back to dashboard</a>
+        <a href="{{ dashboard_url }}" class="inline-flex items-center text-sm text-white/75 hover:text-white">← Back to dashboard</a>
         <div class="mt-5">
           <span class="cc-chip bg-white/10 text-white border border-white/15">Project view</span>
           <h1 class="mt-5 text-4xl font-black tracking-tight md:text-5xl">{{ project.study_code }} · {{ project.name }}</h1>
@@ -446,7 +446,7 @@ if (aiForm && questionInput && answerBox) {
     answerBox.textContent = 'Lini is reviewing this project snapshot...';
     try {
       const body = new URLSearchParams({ question });
-      const response = await fetch("{% url 'project_ai' project.pk %}", {
+      const response = await fetch("{{ project_ai_url }}", {
         method: 'POST',
         credentials: 'same-origin',
         headers: {

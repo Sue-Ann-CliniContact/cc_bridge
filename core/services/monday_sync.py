@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import logging
 import re
+from html import unescape
 
 from django.conf import settings
 from django.db.models import Count
+from django.utils import timezone
 
 from accounts.models import ClientProfile
 from core.models import Lead, Project, ProjectLead, OutreachEvent
@@ -111,6 +113,27 @@ def _reply_text(project_lead: ProjectLead) -> str:
     return ''
 
 
+def _event_payload_text(payload: dict, keys: tuple[str, ...]) -> str:
+    if not isinstance(payload, dict):
+        return ''
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ''
+
+
+def _strip_html(text: str) -> str:
+    cleaned = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+    cleaned = re.sub(r'</p\s*>', '\n\n', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'<[^>]+>', ' ', cleaned)
+    cleaned = unescape(cleaned)
+    cleaned = re.sub(r'\r\n?', '\n', cleaned)
+    cleaned = re.sub(r'[ \t]+', ' ', cleaned)
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+    return cleaned.strip()
+
+
 def _reply_intent(project_lead: ProjectLead) -> str:
     if project_lead.campaign_status == ProjectLead.STATUS_INTERESTED:
         return 'Interested'
@@ -180,6 +203,94 @@ def _sequence_step(project_lead: ProjectLead) -> str:
     if project_lead.campaign_status in (ProjectLead.STATUS_NOT_INTERESTED, ProjectLead.STATUS_UNSUBSCRIBED):
         return 'Stopped - Closed'
     return ''
+
+
+def _sequence_step_number(project_lead: ProjectLead, event: OutreachEvent | None = None) -> int | None:
+    latest = event or _latest_event(project_lead)
+    payload = latest.raw_payload if latest else {}
+    if isinstance(payload, dict):
+        for key in ('sequence_step', 'step', 'step_num', 'step_number'):
+            value = payload.get(key)
+            if value in (None, ''):
+                continue
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
+def _sequence_step_copy(project_lead: ProjectLead, event: OutreachEvent | None = None) -> dict:
+    step_number = _sequence_step_number(project_lead, event)
+    steps = project_lead.campaign.sequence_config if project_lead.campaign_id and project_lead.campaign else []
+    if not isinstance(steps, list):
+        return {}
+    for index, step in enumerate(steps, start=1):
+        try:
+            candidate_num = int(step.get('step_num') or index)
+        except (TypeError, ValueError):
+            candidate_num = index
+        if step_number and candidate_num == step_number:
+            return step
+    if step_number == 1 and steps:
+        return steps[0]
+    return {}
+
+
+def _event_subject(project_lead: ProjectLead, event: OutreachEvent) -> str:
+    payload = event.raw_payload or {}
+    subject = _event_payload_text(payload, ('subject', 'email_subject', 'message_subject'))
+    if subject:
+        return _strip_html(subject)
+    if event.event_type == OutreachEvent.EVENT_EMAIL_SENT:
+        subject = (_sequence_step_copy(project_lead, event).get('subject') or '').strip()
+        if subject:
+            return subject
+    return ''
+
+
+def _event_body(project_lead: ProjectLead, event: OutreachEvent) -> str:
+    payload = event.raw_payload or {}
+    if event.event_type == OutreachEvent.EVENT_EMAIL_REPLIED:
+        text = _event_payload_text(payload, ('reply_text', 'reply_body', 'body', 'text', 'snippet', 'message'))
+        return _strip_html(text)[:4000] if text else ''
+    if event.event_type == OutreachEvent.EVENT_EMAIL_SENT:
+        text = _event_payload_text(payload, ('body', 'html', 'text', 'message'))
+        if text:
+            return _strip_html(text)[:4000]
+        body = (_sequence_step_copy(project_lead, event).get('body') or '').strip()
+        if body:
+            return _strip_html(body)[:4000]
+    return ''
+
+
+def _event_heading(event: OutreachEvent) -> str:
+    if event.event_type == OutreachEvent.EVENT_EMAIL_SENT:
+        return 'Email Sent'
+    if event.event_type == OutreachEvent.EVENT_EMAIL_REPLIED:
+        return 'Email Reply Received'
+    return event.get_event_type_display()
+
+
+def _build_monday_thread_update(project_lead: ProjectLead, event: OutreachEvent) -> str:
+    lines = [
+        f'Bridge activity: {_event_heading(event)}',
+        f'Lead: {_item_name_for_lead(project_lead.lead)}',
+        f'When: {timezone.localtime(event.timestamp).strftime("%Y-%m-%d %H:%M")}',
+    ]
+    campaign_name = _campaign_name(project_lead)
+    if campaign_name:
+        lines.append(f'Campaign: {campaign_name}')
+    sequence_step = _sequence_step(project_lead)
+    if sequence_step:
+        lines.append(f'Sequence: {sequence_step}')
+    subject = _event_subject(project_lead, event)
+    if subject:
+        lines.append(f'Subject: {subject}')
+    body = _event_body(project_lead, event)
+    if body:
+        lines.extend(['', body[:3000]])
+    return '\n'.join(lines).strip()
 
 
 def _last_event_type(project_lead: ProjectLead) -> str:
@@ -393,6 +504,35 @@ def sync_project_lead(project_lead: ProjectLead, *, user=None) -> dict:
         return {'ok': True, 'action': action, 'item_id': project_lead.monday_item_id}
     except Exception as exc:  # noqa: BLE001
         log.warning('Monday sync failed for ProjectLead %s: %s', project_lead.pk, exc)
+        return {'ok': False, 'error': str(exc)}
+
+
+def sync_event_update(project_lead: ProjectLead, event: OutreachEvent, *, user=None) -> dict:
+    if event.synced_to_monday:
+        return {'ok': True, 'action': 'already_synced', 'item_id': project_lead.monday_item_id}
+
+    project_sync = sync_project_lead(project_lead, user=user)
+    if not project_sync.get('ok'):
+        return {'ok': False, 'error': project_sync.get('error') or project_sync.get('skipped') or 'lead sync failed'}
+    if not project_lead.monday_item_id:
+        return {'ok': False, 'error': 'project lead has no monday item id'}
+
+    sync_user = _sync_user(project_lead.project, explicit_user=user)
+    if not sync_user:
+        return {'ok': False, 'error': 'no Monday user token available'}
+
+    body = _build_monday_thread_update(project_lead, event)
+    if not body:
+        return {'ok': False, 'error': 'no update body available'}
+
+    try:
+        monday_client.create_update(sync_user, project_lead.monday_item_id, body)
+        event.synced_to_monday = True
+        event.synced_at = timezone.now()
+        event.save(update_fields=['synced_to_monday', 'synced_at'])
+        return {'ok': True, 'action': 'update_created', 'item_id': project_lead.monday_item_id}
+    except Exception as exc:  # noqa: BLE001
+        log.warning('Monday item update failed for OutreachEvent %s: %s', event.pk, exc)
         return {'ok': False, 'error': str(exc)}
 
 

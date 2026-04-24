@@ -117,7 +117,7 @@
         {% if project_cards %}
           <div class="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {% for snap in project_cards %}
-              <a href="{% url 'project_detail' snap.project_id %}" class="metric-card p-5 transition-transform hover:-translate-y-0.5">
+              <a href="{% url project_url_name snap.project_id %}" class="metric-card p-5 transition-transform hover:-translate-y-0.5">
                 <div class="flex items-start justify-between gap-4">
                   <div>
                     <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-cc-muted">{{ snap.study_code }}</p>
@@ -175,7 +175,7 @@ if (workspaceAiForm) {
     workspaceAiAnswer.textContent = 'Lini is reviewing the workspace snapshot...';
     try {
       const body = new URLSearchParams({ question });
-      const response = await fetch("{% url 'dashboard_ai' %}", {
+      const response = await fetch("{{ dashboard_ai_url }}", {
         method: 'POST',
         credentials: 'same-origin',
         headers: {

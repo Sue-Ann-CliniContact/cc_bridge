@@ -130,6 +130,12 @@ def bridge_column_map(columns: list[dict]) -> dict:
         'email': '',
         'source_directory': '',
         'campaign_status': '',
+        'sequence_step': '',
+        'human_action_needed': '',
+        'reply_intent': '',
+        'next_action': '',
+        'campaign_name': '',
+        'last_event_type': '',
         'last_event': '',
         'interest_level': '',
         'referral_link': '',
@@ -156,6 +162,18 @@ def bridge_column_map(columns: list[dict]) -> dict:
             mapping['source_directory'] = col_id
         elif ('campaign status' in title or 'outreach status' in title) and not mapping['campaign_status']:
             mapping['campaign_status'] = col_id
+        elif 'sequence step' in title and not mapping['sequence_step']:
+            mapping['sequence_step'] = col_id
+        elif 'human action' in title and not mapping['human_action_needed']:
+            mapping['human_action_needed'] = col_id
+        elif 'reply intent' in title and not mapping['reply_intent']:
+            mapping['reply_intent'] = col_id
+        elif 'next action' in title and not mapping['next_action']:
+            mapping['next_action'] = col_id
+        elif 'campaign name' in title and not mapping['campaign_name']:
+            mapping['campaign_name'] = col_id
+        elif 'last event type' in title and not mapping['last_event_type']:
+            mapping['last_event_type'] = col_id
         elif ('last event' in title or 'date of last contact' in title) and not mapping['last_event']:
             mapping['last_event'] = col_id
         elif 'interest' in title and not mapping['interest_level']:
@@ -222,14 +240,43 @@ def create_board(user, *, name: str, workspace_id: str | None = None, board_kind
     return data.get('create_board') or {}
 
 
-def create_column(user, board_id: str, *, title: str, column_type: str) -> dict:
+def create_column(user, board_id: str, *, title: str, column_type: str, defaults: dict | None = None) -> dict:
     query = """
-    mutation ($boardId: ID!, $title: String!, $columnType: ColumnType!) {
-      create_column(board_id: $boardId, title: $title, column_type: $columnType) {
+    mutation ($boardId: ID!, $title: String!, $columnType: ColumnType!, $defaults: JSON) {
+      create_column(board_id: $boardId, title: $title, column_type: $columnType, defaults: $defaults) {
         id
         title
       }
     }
     """
-    data = graphql(user, query, {'boardId': board_id, 'title': title, 'columnType': column_type})
+    data = graphql(
+        user,
+        query,
+        {'boardId': board_id, 'title': title, 'columnType': column_type, 'defaults': json.dumps(defaults) if defaults else None},
+    )
     return data.get('create_column') or {}
+
+
+def create_group(user, board_id: str, *, group_name: str, group_color: str | None = None) -> dict:
+    query = """
+    mutation ($boardId: ID!, $groupName: String!, $groupColor: String) {
+      create_group(board_id: $boardId, group_name: $groupName, group_color: $groupColor) {
+        id
+        title
+      }
+    }
+    """
+    data = graphql(user, query, {'boardId': board_id, 'groupName': group_name, 'groupColor': group_color})
+    return data.get('create_group') or {}
+
+
+def move_item_to_group(user, item_id: str, group_id: str) -> dict:
+    query = """
+    mutation ($itemId: ID!, $groupId: String!) {
+      move_item_to_group(item_id: $itemId, group_id: $groupId) {
+        id
+      }
+    }
+    """
+    data = graphql(user, query, {'itemId': item_id, 'groupId': group_id})
+    return data.get('move_item_to_group') or {}

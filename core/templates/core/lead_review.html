@@ -10,6 +10,9 @@
     <p class="mt-1 text-sm text-cc-muted">
       Global leads DB across all projects. Select rows and add them to <strong>{{ project.study_code }}</strong>.
     </p>
+    <p class="mt-2 text-xs text-cc-muted">
+      Edits here update the global lead record, and Bridge will sync that change across this project's attached lead rows and Monday items automatically.
+    </p>
   </div>
   {% if apollo_configured %}
     <div class="text-right text-xs text-cc-muted shrink-0">
@@ -75,6 +78,14 @@
     <input type="text" name="q" value="{{ filters.q }}" class="cc-input" placeholder="name, org, specialty">
   </div>
   <div>
+    <label class="cc-label">Project scope</label>
+    <select name="project_scope" class="cc-input">
+      <option value="" {% if filters.project_scope == '' %}selected{% endif %}>All leads</option>
+      <option value="on_project" {% if filters.project_scope == 'on_project' %}selected{% endif %}>Already on {{ project.study_code }}</option>
+      <option value="not_on_project" {% if filters.project_scope == 'not_on_project' %}selected{% endif %}>Not yet on {{ project.study_code }}</option>
+    </select>
+  </div>
+  <div>
     <label class="cc-label">Source</label>
     <select name="source" class="cc-input">
       <option value="">All sources</option>
@@ -103,11 +114,17 @@
   <div>
     <label class="cc-label flex items-center gap-2">
       <input type="checkbox" name="hide_added" value="1" {% if filters.hide_added == '1' %}checked{% endif %}>
-      Hide already-added
+      Hide leads already added to {{ project.study_code }}
     </label>
   </div>
   <button class="cc-btn cc-btn-ghost">Apply</button>
 </form>
+
+<div class="mt-3 flex flex-wrap gap-2 text-xs">
+  <a href="?hide_added=1" class="cc-chip {% if filters.hide_added == '1' and filters.project_scope == '' %}ok{% else %}muted{% endif %}">Default view</a>
+  <a href="?project_scope=on_project&hide_added=0" class="cc-chip {% if filters.project_scope == 'on_project' %}ok{% else %}muted{% endif %}">Show leads already on this project</a>
+  <a href="?project_scope=not_on_project&hide_added=0" class="cc-chip {% if filters.project_scope == 'not_on_project' %}ok{% else %}muted{% endif %}">Show leads not yet added</a>
+</div>
 
 <!-- Table + bulk add form -->
 <form method="post" action="{% url 'add_leads_to_project' project.pk %}" class="mt-4">
@@ -218,7 +235,7 @@
                         data-lead-id="{{ lead.pk }}"
                         class="enrich-btn cc-btn cc-btn-ghost text-xs mr-1">Apollo</button>
               {% endif %}
-              <a href="{% url 'lead_edit' lead.pk %}?next={% url 'lead_review' project.pk %}" class="cc-btn cc-btn-ghost text-xs">Edit</a>
+              <a href="{% url 'lead_edit' lead.pk %}?next={{ request.get_full_path|urlencode }}" class="cc-btn cc-btn-ghost text-xs">Edit</a>
             </td>
           </tr>
         {% empty %}
@@ -235,10 +252,10 @@
     <div class="text-xs text-cc-muted">
       Showing {{ page.start_index }}–{{ page.end_index }} of {{ page.paginator.count }}
       {% if page.has_previous %}
-        · <a href="?{% if filters.q %}q={{ filters.q }}&{% endif %}{% if filters.source %}source={{ filters.source }}&{% endif %}{% if filters.classification %}classification={{ filters.classification }}&{% endif %}{% if filters.has_email %}has_email={{ filters.has_email }}&{% endif %}hide_added={{ filters.hide_added }}&page={{ page.previous_page_number }}" class="text-cc-royal hover:underline">prev</a>
+        · <a href="?{% if filters.q %}q={{ filters.q }}&{% endif %}{% if filters.project_scope %}project_scope={{ filters.project_scope }}&{% endif %}{% if filters.source %}source={{ filters.source }}&{% endif %}{% if filters.classification %}classification={{ filters.classification }}&{% endif %}{% if filters.has_email %}has_email={{ filters.has_email }}&{% endif %}hide_added={{ filters.hide_added }}&page={{ page.previous_page_number }}" class="text-cc-royal hover:underline">prev</a>
       {% endif %}
       {% if page.has_next %}
-        · <a href="?{% if filters.q %}q={{ filters.q }}&{% endif %}{% if filters.source %}source={{ filters.source }}&{% endif %}{% if filters.classification %}classification={{ filters.classification }}&{% endif %}{% if filters.has_email %}has_email={{ filters.has_email }}&{% endif %}hide_added={{ filters.hide_added }}&page={{ page.next_page_number }}" class="text-cc-royal hover:underline">next</a>
+        · <a href="?{% if filters.q %}q={{ filters.q }}&{% endif %}{% if filters.project_scope %}project_scope={{ filters.project_scope }}&{% endif %}{% if filters.source %}source={{ filters.source }}&{% endif %}{% if filters.classification %}classification={{ filters.classification }}&{% endif %}{% if filters.has_email %}has_email={{ filters.has_email }}&{% endif %}hide_added={{ filters.hide_added }}&page={{ page.next_page_number }}" class="text-cc-royal hover:underline">next</a>
       {% endif %}
     </div>
     <button type="submit" class="cc-btn cc-btn-primary">Add selected to {{ project.study_code }}</button>

@@ -401,6 +401,7 @@ def lead_review(request, project_id):
     source_filter = request.GET.get('source', '')
     classification_filter = request.GET.get('classification', '')
     has_email = request.GET.get('has_email', '')
+    project_scope = request.GET.get('project_scope', '')
     hide_added = request.GET.get('hide_added', '1')
     query = request.GET.get('q', '').strip()
 
@@ -412,6 +413,10 @@ def lead_review(request, project_id):
         qs = qs.filter(email__isnull=False).exclude(email='')
     elif has_email == '0':
         qs = qs.filter(Q(email__isnull=True) | Q(email=''))
+    if project_scope == 'on_project':
+        qs = qs.filter(on_project=True)
+    elif project_scope == 'not_on_project':
+        qs = qs.filter(on_project=False)
     if hide_added == '1':
         qs = qs.filter(on_project=False)
     if query:
@@ -440,6 +445,7 @@ def lead_review(request, project_id):
             'source': source_filter,
             'classification': classification_filter,
             'has_email': has_email,
+            'project_scope': project_scope,
             'hide_added': hide_added,
             'q': query,
         },

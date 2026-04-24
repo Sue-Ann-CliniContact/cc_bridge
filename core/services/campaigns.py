@@ -16,6 +16,63 @@ from integrations import instantly as instantly_client
 from . import monday_sync
 
 
+def _recipient_type(lead: Lead) -> str:
+    if lead.first_name or lead.last_name:
+        return 'named_person'
+    if lead.organization_email:
+        return 'generic_org_inbox'
+    return 'organization_only'
+
+
+def _formal_salutation(lead: Lead) -> str:
+    role_text = (lead.role or '').lower()
+    last_name = (lead.last_name or '').strip()
+    first_name = (lead.first_name or '').strip()
+    organization = (lead.organization or '').strip()
+
+    if last_name:
+        if 'professor' in role_text or role_text.startswith('prof ') or ' prof.' in role_text:
+            return f'Prof. {last_name}'
+        if (
+            'dr' in role_text
+            or 'physician' in role_text
+            or 'medical' in role_text
+            or 'geneticist' in role_text
+            or 'neurolog' in role_text
+            or 'pediatric' in role_text
+        ):
+            return f'Dr. {last_name}'
+        return first_name or last_name
+    if organization:
+        return f'{organization} team'
+    return 'there'
+
+
+def _greeting_name(lead: Lead) -> str:
+    if lead.first_name:
+        return lead.first_name.strip()
+    if lead.organization:
+        return f'{lead.organization} team'
+    return 'there'
+
+
+def _lead_personalization(lead: Lead, project_lead: ProjectLead, campaign: Campaign) -> dict:
+    return {
+        'project_id': campaign.project_id,
+        'campaign_id': campaign.pk,
+        'lead_id': lead.pk,
+        'tracking_token': project_lead.tracking_token,
+        'first_name': (lead.first_name or '').strip(),
+        'last_name': (lead.last_name or '').strip(),
+        'organization_name': (lead.organization or '').strip(),
+        'role': (lead.role or '').strip(),
+        'specialty': (lead.specialty or '').strip(),
+        'recipient_type': _recipient_type(lead),
+        'formal_salutation': _formal_salutation(lead),
+        'greeting_name': _greeting_name(lead),
+    }
+
+
 def get_landing_page_url(project: Project) -> str:
     """Pull the approved landing-page URL from the project's StudyAssets."""
     asset = project.assets.filter(type=StudyAsset.TYPE_LANDING_PAGE).order_by('-approved_at', '-created_at').first()
@@ -148,12 +205,7 @@ def launch_campaign(
             'first_name': lead.first_name,
             'last_name': lead.last_name,
             'organization': lead.organization,
-            'custom_variables': {
-                'project_id': campaign.project_id,
-                'campaign_id': campaign.pk,
-                'lead_id': lead.pk,
-                'tracking_token': pl.tracking_token,
-            },
+            'custom_variables': _lead_personalization(lead, pl, campaign),
         })
     if not payload_leads:
         return {

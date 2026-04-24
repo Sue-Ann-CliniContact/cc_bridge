@@ -764,7 +764,11 @@ EMAIL_SEQUENCE_SYSTEM_PROMPT = (
     "- You may mention {{landing_page_url}} only as a later-stage placeholder for "
     "when an interested collaborator asks for the referral page; do not make it "
     "the main CTA in these first-touch drafts.\n"
-    "- You MAY use {{first_name}} once per email; avoid other merge vars.\n"
+    "- Personalization must match the recipient type. For named clinicians or professors, prefer {{formal_salutation}}. "
+    "For named non-physician contacts, use {{greeting_name}}. For generic or organization-level inboxes, address "
+    "the organization or team and do not pretend you know an individual.\n"
+    "- You MAY use {{formal_salutation}}, {{greeting_name}}, or {{organization_name}} once near the opening; avoid "
+    "stuffing multiple merge vars throughout the email.\n"
     "- End each email with a single closing line like 'Best,\\nThe CliniContact "
     "team' — the actual sending signature is applied by Instantly per sending "
     "account.\n\n"
@@ -793,7 +797,7 @@ EMAIL_SEQUENCE_TOOL_SCHEMA = {
                     'step_num': {'type': 'integer', 'description': '1, 2, or 3'},
                     'delay_days': {'type': 'integer', 'description': 'Days after previous step (step 1 = 0)'},
                     'subject': {'type': 'string'},
-                    'body': {'type': 'string', 'description': 'Plaintext body with {{first_name}} and optional later-stage {{landing_page_url}} placeholder'},
+                    'body': {'type': 'string', 'description': 'Plaintext body with optional {{formal_salutation}}, {{greeting_name}}, {{organization_name}}, and later-stage {{landing_page_url}} placeholder'},
                     'rationale': {'type': 'string', 'description': 'One short sentence on what this step does'},
                 },
                 'required': ['step_num', 'subject', 'body', 'delay_days'],
@@ -818,7 +822,8 @@ def draft_email_sequence(
         f"Study indication: {profile.study_indication or '(not set)'}\n"
         f"Patient population: {profile.patient_population_description or '(not set)'}\n"
         f"Partner type receiving these emails: {profile.get_partner_type_display()}\n"
-        f"Target contact roles: {', '.join(profile.target_contact_roles or []) or '(not set)'}"
+        f"Target contact roles: {', '.join(profile.target_contact_roles or []) or '(not set)'}\n"
+        f"Available merge vars: {{{{formal_salutation}}}}, {{{{greeting_name}}}}, {{{{organization_name}}}}, {{{{landing_page_url}}}}"
     )
     joined_assets = '\n\n---\n\n'.join(t.strip() for t in asset_texts if t and t.strip()) or '(no assets uploaded)'
     landing_line = (
@@ -832,6 +837,9 @@ def draft_email_sequence(
         f"Study code: {study_code}\n\n"
         f"Targeting context:\n{profile_ctx}\n\n"
         f"{landing_line}\n"
+        f"Important personalization rule: use {{{{formal_salutation}}}} for named clinicians/professors, "
+        f"{{{{greeting_name}}}} for named non-physician contacts, and organization/team wording for generic inboxes "
+        f"or organization-only records.\n"
         f"Important: the first-touch emails should ask whether the recipient is interested in collaborating, receiving the flyer, or speaking with the study team. "
         f"Only mention sending the referral landing page / screener after they confirm interest.\n\n"
         f"Approved study materials (your only source of clinical claims):\n---\n{joined_assets[:8000]}\n---\n\n"

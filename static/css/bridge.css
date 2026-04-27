@@ -207,6 +207,52 @@
     border: 1px solid rgba(37, 80, 230, 0.08);
 }
 
+.pie-card {
+    width: 168px;
+    height: 168px;
+    margin: 0 auto;
+    border-radius: 999px;
+    background: conic-gradient(var(--pie-stops));
+    position: relative;
+    box-shadow: inset 0 0 0 1px rgba(19, 38, 86, 0.05);
+}
+
+.pie-card::after {
+    content: "";
+    position: absolute;
+    inset: 24px;
+    border-radius: 999px;
+    background: #fff;
+    box-shadow: 0 0 0 1px rgba(19, 38, 86, 0.04);
+}
+
+.pie-card-center {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+
+.pie-card-center span {
+    font-size: 1.9rem;
+    font-weight: 900;
+    color: var(--cc-ink);
+    line-height: 1;
+}
+
+.pie-card-center small {
+    margin-top: 0.35rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--cc-muted);
+}
+
 .lead-table-card {
     overflow: hidden;
 }

@@ -48,7 +48,7 @@
     <div class="border-b border-slate-100">
       <a href="?tab=overview" class="portal-tab {% if active_tab == 'overview' %}active{% endif %}">Overview</a>
       <a href="?tab=ai" class="portal-tab {% if active_tab == 'ai' %}active{% endif %}">AI</a>
-      <a href="?tab=handoffs" class="portal-tab {% if active_tab == 'handoffs' %}active{% endif %}">Client Visible</a>
+      <a href="?tab=handoffs" class="portal-tab {% if active_tab == 'handoffs' %}active{% endif %}">Handover Leads</a>
       {% if is_operator %}
         <a href="?tab=operator" class="portal-tab {% if active_tab == 'operator' %}active{% endif %}">Operator</a>
       {% endif %}
@@ -113,7 +113,7 @@
       <div class="mt-6">
         <div class="flex items-center justify-between gap-4">
           <div>
-            <p class="text-xs font-bold uppercase tracking-[0.24em] text-cc-muted">Client Visible Leads</p>
+            <p class="text-xs font-bold uppercase tracking-[0.24em] text-cc-muted">Handover Leads</p>
             <h2 class="mt-2 text-3xl font-black tracking-tight text-cc-ink">Study team handoffs and direct-contact rows</h2>
             <p class="mt-2 text-sm text-cc-muted">These rows only appear when the Monday <strong>Client Visible</strong> checkbox is selected.</p>
           </div>
@@ -150,8 +150,8 @@
           </div>
         {% else %}
           <div class="metric-card mt-5 p-8 text-center">
-            <h3 class="text-xl font-black text-cc-ink">No client-visible leads yet</h3>
-            <p class="mt-2 text-sm text-cc-muted">When the outreach team checks <strong>Client Visible</strong> on Monday for a handoff row, it will appear here automatically after sync.</p>
+            <h3 class="text-xl font-black text-cc-ink">No handover leads yet</h3>
+            <p class="mt-2 text-sm text-cc-muted">When the outreach team checks <strong>Client Visible</strong> on Monday for a handoff row, it will appear here on the next portal refresh.</p>
           </div>
         {% endif %}
       </div>
@@ -298,14 +298,22 @@
               </div>
               <span class="cc-chip muted">{{ client_snapshot.status_series|length }} statuses</span>
             </div>
-            <div class="mt-5 space-y-3">
-              {% for item in client_snapshot.status_series %}
-                <div class="series-row">
-                  <div class="min-w-0 text-sm font-medium text-cc-ink">{{ item.label }}</div>
-                  <div class="series-bar"><div class="series-bar-fill" style="width: {{ item.percent }}%; background: {{ item.color }};"></div></div>
-                  <div class="text-xs font-bold text-cc-muted">{{ item.value }}</div>
+            <div class="mt-5 grid gap-5 lg:grid-cols-[180px_1fr] lg:items-center">
+              <div class="pie-card" style="--pie-stops:{% for item in client_snapshot.status_series %}{{ item.color }} {{ item.percent }}%{% if not forloop.last %}, {% endif %}{% endfor %};">
+                <div class="pie-card-center">
+                  <span>{{ client_snapshot.status_series|length }}</span>
+                  <small>statuses</small>
                 </div>
-              {% endfor %}
+              </div>
+              <div class="space-y-3">
+                {% for item in client_snapshot.status_series %}
+                  <div class="series-row">
+                    <div class="min-w-0 text-sm font-medium text-cc-ink">{{ item.label }}</div>
+                    <div class="series-bar"><div class="series-bar-fill" style="width: {{ item.percent }}%; background: {{ item.color }};"></div></div>
+                    <div class="text-xs font-bold text-cc-muted">{{ item.value }}</div>
+                  </div>
+                {% endfor %}
+              </div>
             </div>
           </div>
 
@@ -317,14 +325,22 @@
               </div>
               <span class="cc-chip muted">{{ client_snapshot.contact_type_series|length }} types</span>
             </div>
-            <div class="mt-5 space-y-3">
-              {% for item in client_snapshot.contact_type_series %}
-                <div class="series-row">
-                  <div class="min-w-0 text-sm font-medium text-cc-ink">{{ item.label }}</div>
-                  <div class="series-bar"><div class="series-bar-fill" style="width: {{ item.percent }}%; background: {{ item.color }};"></div></div>
-                  <div class="text-xs font-bold text-cc-muted">{{ item.value }}</div>
+            <div class="mt-5 grid gap-5 lg:grid-cols-[180px_1fr] lg:items-center">
+              <div class="pie-card" style="--pie-stops:{% for item in client_snapshot.contact_type_series %}{{ item.color }} {{ item.percent }}%{% if not forloop.last %}, {% endif %}{% endfor %};">
+                <div class="pie-card-center">
+                  <span>{{ client_snapshot.contact_type_series|length }}</span>
+                  <small>types</small>
                 </div>
-              {% endfor %}
+              </div>
+              <div class="space-y-3">
+                {% for item in client_snapshot.contact_type_series %}
+                  <div class="series-row">
+                    <div class="min-w-0 text-sm font-medium text-cc-ink">{{ item.label }}</div>
+                    <div class="series-bar"><div class="series-bar-fill" style="width: {{ item.percent }}%; background: {{ item.color }};"></div></div>
+                    <div class="text-xs font-bold text-cc-muted">{{ item.value }}</div>
+                  </div>
+                {% endfor %}
+              </div>
             </div>
           </div>
 
@@ -385,6 +401,7 @@
           </div>
 
           <div class="grid gap-5">
+            {% if is_operator %}
             <div class="metric-card p-5">
               <p class="text-xs font-bold uppercase tracking-[0.24em] text-cc-royal">Project Rollup</p>
               <h3 class="mt-2 text-2xl font-black tracking-tight text-cc-ink">Campaign snapshot</h3>
@@ -407,12 +424,13 @@
                 {% endfor %}
               </div>
             </div>
+            {% endif %}
 
             <div class="metric-card p-5">
-              <p class="text-xs font-bold uppercase tracking-[0.24em] text-cc-royal">Client Visibility</p>
+              <p class="text-xs font-bold uppercase tracking-[0.24em] text-cc-royal">Handover Visibility</p>
               <h3 class="mt-2 text-2xl font-black tracking-tight text-cc-ink">Handoff readiness</h3>
               <p class="mt-3 text-sm text-cc-muted">{{ client_snapshot.client_visible_count }} rows are currently visible to the client through the Monday checkbox workflow.</p>
-              <a href="?tab=handoffs" class="cc-btn cc-btn-ghost mt-5">Open visible handoffs</a>
+              <a href="?tab=handoffs" class="cc-btn cc-btn-ghost mt-5">Open handover leads</a>
             </div>
           </div>
         </div>

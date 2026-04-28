@@ -480,7 +480,7 @@ def source_leads_ai(request, project_id):
 @require_POST
 def add_leads_to_project(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
-    lead_ids = [int(x) for x in request.POST.getlist('lead_ids') if x.isdigit()]
+    lead_ids = list(dict.fromkeys(int(x) for x in request.POST.getlist('lead_ids') if x.isdigit()))
     if not lead_ids:
         messages.warning(request, 'Select at least one lead.')
         return redirect('lead_review', project_id=project.pk)
@@ -491,9 +491,12 @@ def add_leads_to_project(request, project_id):
         for lead_id in lead_ids
         if lead_id not in existing
     ]
-    ProjectLead.objects.bulk_create(to_create)
+    ProjectLead.objects.bulk_create(to_create, ignore_conflicts=True)
     created_rows = list(
-        ProjectLead.objects.filter(project=project, lead_id__in=[pl.lead_id for pl in to_create])
+        ProjectLead.objects.filter(
+            project=project,
+            lead_id__in=[pl.lead_id for pl in to_create if pl.lead_id not in existing],
+        )
         .select_related('project', 'lead')
     )
     monday_sync.sync_project_leads(created_rows, user=request.user)

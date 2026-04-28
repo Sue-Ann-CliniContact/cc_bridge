@@ -28,6 +28,15 @@ from .services import monday_sync
 from .services import sourcing
 
 
+def _project_tab_redirect(project_id, tab='overview'):
+    return redirect(f"{reverse('project_detail', args=[project_id])}?tab={tab}")
+
+
+def _project_redirect_from_request(request, project_id, default_tab='overview'):
+    tab = (request.POST.get('next_tab') or request.GET.get('tab') or default_tab).strip() or default_tab
+    return _project_tab_redirect(project_id, tab=tab)
+
+
 @login_required
 def dashboard(request):
     return _render_dashboard(request, portal_mode=False)
@@ -106,7 +115,7 @@ def asset_upload(request, project_id):
         asset = form.save(commit=False)
         asset.project = project
         asset.save()
-    return redirect('project_detail', project_id=project.pk)
+    return _project_redirect_from_request(request, project.pk)
 
 
 @login_required
@@ -116,7 +125,7 @@ def asset_approve(request, asset_id):
     asset.approved_by = request.user
     asset.approved_at = timezone.now()
     asset.save(update_fields=['approved_by', 'approved_at', 'updated_at'])
-    return redirect('project_detail', project_id=asset.project_id)
+    return _project_redirect_from_request(request, asset.project_id)
 
 
 @login_required
@@ -131,7 +140,7 @@ def monday_provision_board(request, project_id):
             messages.warning(request, 'Some columns could not be created: ' + '; '.join(result['column_errors'][:3]))
     else:
         messages.error(request, f"Monday board provisioning failed: {result.get('error', 'unknown error')}")
-    return redirect('project_detail', project_id=project.pk)
+    return _project_redirect_from_request(request, project.pk, default_tab='operator')
 
 
 @login_required
@@ -146,7 +155,7 @@ def monday_sync_project_view(request, project_id):
         )
     else:
         messages.error(request, f"Monday sync failed: {result.get('error', 'unknown error')}")
-    return redirect('project_detail', project_id=project.pk)
+    return _project_redirect_from_request(request, project.pk, default_tab='operator')
 
 
 @login_required
@@ -161,7 +170,7 @@ def monday_pull_statuses_view(request, project_id):
         )
     else:
         messages.error(request, f"Monday pull failed: {result.get('error', 'unknown error')}")
-    return redirect('project_detail', project_id=project.pk)
+    return _project_redirect_from_request(request, project.pk, default_tab='operator')
 
 
 @login_required
@@ -233,7 +242,7 @@ def partner_profile_edit(request, project_id):
             instance = form.save(commit=False)
             instance.project = project
             instance.save()
-            return redirect('project_detail', project_id=project.pk)
+            return _project_redirect_from_request(request, project.pk, default_tab='operator')
     else:
         initial = {}
         if suggestion:

@@ -166,12 +166,12 @@
             <div><dt class="text-cc-muted">Created</dt><dd class="text-cc-ink">{{ project.created_at|date:"M j, Y" }}</dd></div>
           </dl>
           <div class="mt-6 space-y-2">
-            <form method="post" action="{% url 'monday_provision_board' project.pk %}">{% csrf_token %}<button class="cc-btn cc-btn-ghost w-full justify-center">{% if project.monday_board_id %}Recheck{% else %}Provision{% endif %} Monday board</button></form>
-            <form method="post" action="{% url 'monday_sync_project' project.pk %}">{% csrf_token %}<button class="cc-btn cc-btn-ghost w-full justify-center">Sync all project leads to Monday</button></form>
-            <form method="post" action="{% url 'monday_pull_statuses' project.pk %}">{% csrf_token %}<button class="cc-btn cc-btn-ghost w-full justify-center">Pull Monday status changes</button></form>
-            <a href="{% url 'partner_profile_edit' project.pk %}" class="cc-btn cc-btn-ghost w-full justify-center">{% if project.partner_profile %}Edit{% else %}Define{% endif %} partner profile</a>
-            <a href="{% url 'lead_review' project.pk %}" class="cc-btn cc-btn-ghost w-full justify-center">Review &amp; source leads</a>
-            <a href="{% url 'campaign_create' project.pk %}" class="cc-btn cc-btn-primary w-full justify-center">+ New campaign</a>
+            <form method="post" action="{% url 'monday_provision_board' project.pk %}">{% csrf_token %}<input type="hidden" name="next_tab" value="operator"><button class="cc-btn cc-btn-ghost w-full justify-center">{% if project.monday_board_id %}Recheck{% else %}Provision{% endif %} Monday board</button></form>
+            <form method="post" action="{% url 'monday_sync_project' project.pk %}">{% csrf_token %}<input type="hidden" name="next_tab" value="operator"><button class="cc-btn cc-btn-ghost w-full justify-center">Sync all project leads to Monday</button></form>
+            <form method="post" action="{% url 'monday_pull_statuses' project.pk %}">{% csrf_token %}<input type="hidden" name="next_tab" value="operator"><button class="cc-btn cc-btn-ghost w-full justify-center">Pull Monday status changes</button></form>
+            <a href="{% url 'partner_profile_edit' project.pk %}?tab=operator" class="cc-btn cc-btn-ghost w-full justify-center">{% if project.partner_profile %}Edit{% else %}Define{% endif %} partner profile</a>
+            <a href="{% url 'lead_review' project.pk %}?tab=operator" class="cc-btn cc-btn-ghost w-full justify-center">Review &amp; source leads</a>
+            <a href="{% url 'campaign_create' project.pk %}?tab=operator" class="cc-btn cc-btn-primary w-full justify-center">+ New campaign</a>
           </div>
         </section>
         <section class="surface-card p-6">
@@ -227,7 +227,7 @@
                       {% if asset.is_approved %}
                         <span class="cc-chip ok">Approved</span>
                       {% else %}
-                        <form method="post" action="{% url 'asset_approve' asset.pk %}">{% csrf_token %}
+                        <form method="post" action="{% url 'asset_approve' asset.pk %}">{% csrf_token %}<input type="hidden" name="next_tab" value="operator">
                           <button class="cc-btn cc-btn-ghost text-xs">Approve</button>
                         </form>
                       {% endif %}
@@ -242,6 +242,7 @@
 
             <form method="post" enctype="multipart/form-data" action="{% url 'asset_upload' project.pk %}" class="mt-6 space-y-4">
               {% csrf_token %}
+              <input type="hidden" name="next_tab" value="operator">
               <div class="grid gap-3 md:grid-cols-2">
                 <div><label class="cc-label">Asset type</label>{{ asset_form.type }}</div>
                 <div><label class="cc-label">Email subject</label>{{ asset_form.subject }}</div>

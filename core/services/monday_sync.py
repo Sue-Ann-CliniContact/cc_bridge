@@ -53,6 +53,34 @@ CLASSIFICATION_LABELS = [
     {'label': 'Community Provider', 'index': 5, 'color': 'egg_yolk'},
 ]
 
+SOURCE_DIRECTORY_LABELS = [
+    {'label': 'NPI Registry', 'index': 1, 'color': 'bright_blue'},
+    {'label': 'Apollo', 'index': 2, 'color': 'done_green'},
+    {'label': 'AI Suggested (pending review)', 'index': 3, 'color': 'purple'},
+    {'label': 'CSV Import', 'index': 4, 'color': 'working_orange'},
+    {'label': 'Manual', 'index': 5, 'color': 'dark_blue'},
+    {'label': 'ClinicalTrials.gov', 'index': 6, 'color': 'grass_green'},
+    {'label': 'Monday Board Import', 'index': 7, 'color': 'egg_yolk'},
+]
+
+CAMPAIGN_STATUS_LABELS = [
+    {'label': 'Not Started', 'index': 1, 'color': 'working_orange'},
+    {'label': 'Email Sent', 'index': 2, 'color': 'bright_blue'},
+    {'label': 'Engaged', 'index': 3, 'color': 'dark_blue'},
+    {'label': 'Handoff to Study Team', 'index': 4, 'color': 'purple'},
+    {'label': 'Opened', 'index': 5, 'color': 'sky'},
+    {'label': 'Clicked', 'index': 6, 'color': 'grass_green'},
+    {'label': 'Replied', 'index': 7, 'color': 'done_green'},
+    {'label': 'Bounced', 'index': 8, 'color': 'stuck_red'},
+    {'label': 'Unsubscribed', 'index': 9, 'color': 'blackish'},
+    {'label': 'Not Interested', 'index': 10, 'color': 'red_shadow'},
+]
+
+INTEREST_LEVEL_LABELS = [
+    {'label': 'Interested', 'index': 1, 'color': 'done_green'},
+    {'label': 'Not Interested', 'index': 2, 'color': 'stuck_red'},
+]
+
 
 def _sync_user(project: Project, explicit_user=None):
     if explicit_user and _has_monday_token(explicit_user):
@@ -323,6 +351,11 @@ def _referral_link(project_lead: ProjectLead) -> str:
     return f"{settings.APP_BASE_URL.rstrip('/')}/r/{project_lead.tracking_token}"
 
 
+def _referral_link_value(project_lead: ProjectLead) -> dict:
+    link = _referral_link(project_lead)
+    return {'url': link, 'text': 'Referral link'}
+
+
 def _lead_origin_monday_ref(lead: Lead) -> tuple[str, str]:
     geo = lead.geography or {}
     return (str(geo.get('monday_board_id') or ''), str(geo.get('monday_item_id') or ''))
@@ -382,7 +415,7 @@ def _column_values(project_lead: ProjectLead, columns: dict) -> dict:
     if columns.get('last_event_type') and latest_event:
         values[columns['last_event_type']] = _last_event_type(project_lead)
     if columns.get('referral_link'):
-        values[columns['referral_link']] = _referral_link(project_lead)
+        values[columns['referral_link']] = _referral_link_value(project_lead)
     if columns.get('referred_count'):
         values[columns['referred_count']] = project_lead.referred_count
     if columns.get('notes') and lead.do_not_contact_reason:
@@ -420,42 +453,16 @@ def _ensure_board_schema(user, board_id: str) -> dict:
     columns = board.get('columns') or []
     mapping = monday_client.bridge_column_map(columns)
 
-    if not mapping.get('sequence_step'):
-        monday_client.create_column(user, board_id, title='Sequence Step', column_type='text')
-    if not mapping.get('classification'):
+    for key, title, column_type in BRIDGE_BOARD_COLUMNS:
+        if mapping.get(key):
+            continue
         monday_client.create_column(
             user,
             board_id,
-            title='Contact Type',
-            column_type='status',
-            defaults={'labels': CLASSIFICATION_LABELS},
+            title=title,
+            column_type=column_type,
+            defaults=_column_defaults(title),
         )
-    if not mapping.get('human_action_needed'):
-        monday_client.create_column(
-            user,
-            board_id,
-            title='Human Action Needed',
-            column_type='status',
-            defaults={'labels': HUMAN_ACTION_LABELS},
-        )
-    if not mapping.get('reply_intent'):
-        monday_client.create_column(
-            user,
-            board_id,
-            title='Reply Intent',
-            column_type='status',
-            defaults={'labels': REPLY_INTENT_LABELS},
-        )
-    if not mapping.get('next_action'):
-        monday_client.create_column(user, board_id, title='Next Action', column_type='text')
-    if not mapping.get('campaign_name'):
-        monday_client.create_column(user, board_id, title='Campaign Name', column_type='text')
-    if not mapping.get('last_event_type'):
-        monday_client.create_column(user, board_id, title='Last Event Type', column_type='text')
-    if not mapping.get('client_visible'):
-        monday_client.create_column(user, board_id, title='Client Visible', column_type='checkbox')
-    if not mapping.get('notes'):
-        monday_client.create_column(user, board_id, title='Notes', column_type='long_text')
 
     return monday_client.bridge_column_map((_board_meta(user, board_id).get('columns') or []))
 
@@ -587,26 +594,43 @@ def sync_lead_everywhere(lead: Lead, *, user=None) -> list[dict]:
 
 
 BRIDGE_BOARD_COLUMNS = [
-    ('Contact Name', 'text'),
-    ('Organization', 'text'),
-    ('Role / Specialty', 'text'),
-    ('Contact Type', 'status'),
-    ('Email', 'email'),
-    ('Source Directory', 'status'),
-    ('Campaign Status', 'status'),
-    ('Sequence Step', 'text'),
-    ('Human Action Needed', 'status'),
-    ('Reply Intent', 'status'),
-    ('Next Action', 'text'),
-    ('Campaign Name', 'text'),
-    ('Last Event Type', 'text'),
-    ('Last Event', 'date'),
-    ('Interest Level', 'status'),
-    ('Client Visible', 'checkbox'),
-    ('Referral Link', 'link'),
-    ('Referred Count', 'numbers'),
-    ('Notes', 'long_text'),
+    ('contact_name', 'Contact Name', 'text'),
+    ('organization', 'Organization', 'text'),
+    ('role_specialty', 'Role / Specialty', 'text'),
+    ('classification', 'Contact Type', 'status'),
+    ('email', 'Email', 'email'),
+    ('organization_email', 'Organization Email', 'email'),
+    ('source_directory', 'Source Directory', 'status'),
+    ('campaign_status', 'Campaign Status', 'status'),
+    ('sequence_step', 'Sequence Step', 'text'),
+    ('human_action_needed', 'Human Action Needed', 'status'),
+    ('reply_intent', 'Reply Intent', 'status'),
+    ('next_action', 'Next Action', 'text'),
+    ('campaign_name', 'Campaign Name', 'text'),
+    ('last_event_type', 'Last Event Type', 'text'),
+    ('last_event', 'Last Event', 'date'),
+    ('interest_level', 'Interest Level', 'status'),
+    ('client_visible', 'Client Visible', 'checkbox'),
+    ('referral_link', 'Referral Link', 'link'),
+    ('referred_count', 'Referred Count', 'numbers'),
+    ('notes', 'Notes', 'long_text'),
 ]
+
+
+def _column_defaults(title: str) -> dict | None:
+    if title == 'Contact Type':
+        return {'labels': CLASSIFICATION_LABELS}
+    if title == 'Source Directory':
+        return {'labels': SOURCE_DIRECTORY_LABELS}
+    if title == 'Campaign Status':
+        return {'labels': CAMPAIGN_STATUS_LABELS}
+    if title == 'Human Action Needed':
+        return {'labels': HUMAN_ACTION_LABELS}
+    if title == 'Reply Intent':
+        return {'labels': REPLY_INTENT_LABELS}
+    if title == 'Interest Level':
+        return {'labels': INTEREST_LEVEL_LABELS}
+    return None
 
 
 def provision_project_board(project: Project, *, user=None) -> dict:
@@ -623,16 +647,9 @@ def provision_project_board(project: Project, *, user=None) -> dict:
         return {'ok': False, 'error': 'Monday did not return a board id'}
 
     column_errors = []
-    for title, column_type in BRIDGE_BOARD_COLUMNS:
+    for _, title, column_type in BRIDGE_BOARD_COLUMNS:
         try:
-            defaults = None
-            if title == 'Contact Type':
-                defaults = {'labels': CLASSIFICATION_LABELS}
-            elif title == 'Human Action Needed':
-                defaults = {'labels': HUMAN_ACTION_LABELS}
-            elif title == 'Reply Intent':
-                defaults = {'labels': REPLY_INTENT_LABELS}
-            monday_client.create_column(sync_user, board_id, title=title, column_type=column_type, defaults=defaults)
+            monday_client.create_column(sync_user, board_id, title=title, column_type=column_type, defaults=_column_defaults(title))
         except Exception as exc:  # noqa: BLE001
             column_errors.append(f'{title}: {exc}')
     _ensure_groups(sync_user, board_id)

@@ -308,8 +308,32 @@
     box-shadow: 1px 0 0 rgba(19, 38, 86, 0.06);
 }
 
+.lead-table .sticky-col-actions {
+    right: 0;
+    min-width: 15rem;
+    box-shadow: -1px 0 0 rgba(19, 38, 86, 0.06);
+}
+
 .lead-table tbody tr.bg-slate-50\/60 .sticky-col {
     background: rgba(248, 250, 252, 0.96);
+}
+
+.lead-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.35rem;
+}
+
+.lead-action-btn {
+    min-width: 6.5rem;
+    justify-content: center;
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+}
+
+.row-open-cell {
+    cursor: pointer;
 }
 
 .lead-row {

@@ -144,7 +144,7 @@
           <th class="px-4 py-3 text-left">Generic Email</th>
           <th class="px-4 py-3 text-left">Source</th>
           <th class="px-4 py-3 text-left">Enrichment</th>
-          <th class="px-4 py-3"></th>
+          <th class="px-4 py-3 sticky-col sticky-col-actions text-right">Actions</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100">
@@ -157,7 +157,7 @@
                 <span class="cc-chip ok text-[10px] px-2">Added</span>
               {% endif %}
             </td>
-            <td class="px-4 py-3 font-medium text-cc-ink sticky-col sticky-col-name">
+            <td class="px-4 py-3 font-medium text-cc-ink sticky-col sticky-col-name row-open-cell">
               <a href="{% url 'lead_edit' lead.pk %}?next={{ request.get_full_path|urlencode }}" class="font-semibold text-cc-ink hover:text-cc-royal hover:underline">{{ lead.first_name }} {{ lead.last_name }}</a>
               {% if lead.role and lead.source == 'npi' %}<span class="text-xs text-cc-muted">{{ lead.role }}</span>{% endif %}
               {% if not lead.first_name and not lead.last_name %}
@@ -194,16 +194,16 @@
                 —
               {% endif %}
             </td>
-            <td class="px-4 py-3"><span class="cc-chip muted text-[10px]">{{ lead.get_classification_display }}</span></td>
-            <td class="px-4 py-3 text-cc-muted">{{ lead.specialty|default:"—" }}</td>
-            <td class="px-4 py-3 text-cc-ink">
+            <td class="px-4 py-3 row-open-cell"><span class="cc-chip muted text-[10px]">{{ lead.get_classification_display }}</span></td>
+            <td class="px-4 py-3 text-cc-muted row-open-cell">{{ lead.specialty|default:"—" }}</td>
+            <td class="px-4 py-3 text-cc-ink row-open-cell">
               {% if lead.email %}{{ lead.email }}{% else %}<span class="text-cc-muted">—</span>{% endif %}
             </td>
             <td class="px-4 py-3 text-cc-muted">
               {% if lead.organization_email %}{{ lead.organization_email }}{% else %}—{% endif %}
             </td>
-            <td class="px-4 py-3"><span class="cc-chip muted text-[10px]">{{ lead.get_source_display }}</span></td>
-            <td class="px-4 py-3">
+            <td class="px-4 py-3 row-open-cell"><span class="cc-chip muted text-[10px]">{{ lead.get_source_display }}</span></td>
+            <td class="px-4 py-3 row-open-cell">
               {% if lead.source == 'monday_import' and lead.email and not lead.apollo_data %}
                 <span class="cc-chip muted text-[10px]">Imported email</span>
               {% elif lead.enrichment_status == 'needed' %}
@@ -214,39 +214,41 @@
                 <span class="cc-chip ok text-[10px]">{{ lead.get_enrichment_status_display }}</span>
               {% endif %}
             </td>
-            <td class="px-4 py-3 text-right whitespace-nowrap min-w-[300px]">
+            <td class="px-4 py-3 text-right min-w-[260px] sticky-col sticky-col-actions">
+              <div class="lead-actions">
               {% if lead.pending_conflict %}
                 <a href="{% url 'lead_edit' lead.pk %}" class="cc-chip warn text-[10px] mr-1">Conflict</a>
               {% endif %}
               {% if lead.first_name or lead.last_name %}
                 <button type="button"
                         data-lead-id="{{ lead.pk }}"
-                        class="web-enrich-btn cc-btn cc-btn-ghost text-xs mr-1">{% if lead.email or lead.contact_url %}Redo web{% else %}Web search{% endif %}</button>
+                        class="web-enrich-btn cc-btn cc-btn-ghost text-xs lead-action-btn">{% if lead.email or lead.contact_url %}Redo web{% else %}Web search{% endif %}</button>
               {% elif lead.organization or lead.contact_url %}
                 <button type="button"
                         data-lead-id="{{ lead.pk }}"
-                        class="find-contact-btn cc-btn cc-btn-ghost text-xs mr-1">{% if lead.contact_url %}Scrape site{% else %}Find site{% endif %}</button>
+                        class="find-contact-btn cc-btn cc-btn-ghost text-xs lead-action-btn">{% if lead.contact_url %}Scrape site{% else %}Find site{% endif %}</button>
               {% endif %}
               {% if not lead.first_name and not lead.last_name %}
                 {% if lead.organization or lead.contact_url %}
                   <button type="button"
                           data-lead-id="{{ lead.pk }}"
-                          class="web-orgs-btn cc-btn cc-btn-ghost text-xs mr-1">AI web</button>
+                          class="web-orgs-btn cc-btn cc-btn-ghost text-xs lead-action-btn">AI web</button>
                 {% endif %}
               {% endif %}
               {% if apollo_configured %}
                 {% if lead.first_name or lead.last_name %}
                   <button type="button"
                           data-lead-id="{{ lead.pk }}"
-                          class="enrich-btn cc-btn cc-btn-ghost text-xs mr-1">{% if lead.email or lead.apollo_data %}Apollo refresh{% else %}Apollo{% endif %}</button>
+                          class="enrich-btn cc-btn cc-btn-ghost text-xs lead-action-btn">{% if lead.email or lead.apollo_data %}Apollo refresh{% else %}Apollo{% endif %}</button>
                 {% endif %}
               {% endif %}
               {% if lead.classification == 'unclassified' %}
                 <button type="button"
                         data-lead-id="{{ lead.pk }}"
-                        class="reclassify-btn cc-btn cc-btn-ghost text-xs mr-1">Classify</button>
+                        class="reclassify-btn cc-btn cc-btn-ghost text-xs lead-action-btn">Classify</button>
               {% endif %}
-              <a href="{% url 'lead_edit' lead.pk %}?next={{ request.get_full_path|urlencode }}" class="cc-btn cc-btn-ghost text-xs">Edit</a>
+              <a href="{% url 'lead_edit' lead.pk %}?next={{ request.get_full_path|urlencode }}" class="cc-btn cc-btn-ghost text-xs lead-action-btn">Edit</a>
+              </div>
             </td>
           </tr>
         {% empty %}
@@ -301,10 +303,10 @@ document.querySelectorAll('.enrich-btn').forEach(btn => {
       const data = await res.json();
       if (data.ok) {
         if (data.email) {
-          btn.textContent = data.email;
-          setTimeout(() => window.location.reload(), 900);
+          setBtnStatus(btn, 'Saved', data.email);
+          setTimeout(() => window.location.reload(), 350);
         } else {
-          btn.textContent = data.note || 'No email found';
+          setBtnStatus(btn, 'No email', data.note || 'No email found');
           btn.disabled = false;
         }
       } else {
@@ -345,12 +347,12 @@ document.querySelectorAll('.find-contact-btn').forEach(btn => {
           const parts = [];
           if (named) parts.push(`${named} named`);
           if (fb) parts.push(`${fb} generic`);
-          setBtnStatus(btn, `+${n} (${parts.join(', ')})`, `Created ${n} leads (${parts.join(', ')})`);
-          setTimeout(() => window.location.reload(), 900);
+          setBtnStatus(btn, `Added ${n}`, `Created ${n} leads (${parts.join(', ')})`);
+          setTimeout(() => window.location.reload(), 350);
         } else if (named || fb) {
-          setBtnStatus(btn, `Found ${named + fb} (dupes)`, 'All contacts on this page already exist as leads');
+          setBtnStatus(btn, 'Duplicates', 'All contacts on this page already exist as leads');
         } else {
-          setBtnStatus(btn, 'None — try Web search', data.note || 'No names or emails on any fetched page');
+          setBtnStatus(btn, 'Nothing found', data.note || 'No names or emails on any fetched page');
           btn.disabled = false;
         }
       } else {
@@ -385,14 +387,14 @@ document.querySelectorAll('.web-orgs-btn').forEach(btn => {
           const parts = [];
           if (named) parts.push(`${named} named`);
           if (fallback) parts.push(`${fallback} generic`);
-          btn.textContent = `+${n} lead${n === 1 ? '' : 's'} (${parts.join(', ')})`;
-          setTimeout(() => window.location.reload(), 1200);
+          setBtnStatus(btn, `Added ${n}`, `Created ${n} lead(s): ${parts.join(', ')}`);
+          setTimeout(() => window.location.reload(), 350);
         } else if (named || fallback) {
-          btn.textContent = `Found ${named + fallback} (all duplicates)`;
+          setBtnStatus(btn, 'Duplicates', 'All contacts already exist as leads');
         } else if (broken) {
-          btn.textContent = `${broken} URLs failed validation — nothing to save`;
+          setBtnStatus(btn, 'Bad URLs', `${broken} URLs failed validation — nothing to save`);
         } else {
-          btn.textContent = 'Claude found no contacts';
+          setBtnStatus(btn, 'Nothing found', 'Claude found no contacts');
           btn.disabled = false;
         }
       } else {
@@ -421,18 +423,17 @@ document.querySelectorAll('.web-enrich-btn').forEach(btn => {
       const data = await res.json();
       if (data.ok) {
         if (data.email) {
-          btn.textContent = data.email;
-          setTimeout(() => window.location.reload(), 900);
+          setBtnStatus(btn, 'Saved', data.email);
+          setTimeout(() => window.location.reload(), 350);
         } else if (data.affiliation || data.organization_domain) {
           const orgLabel = data.affiliation || data.organization_domain;
-          btn.textContent = `Profile found — ${orgLabel}`;
-          btn.setAttribute('title', data.source_url || data.organization_domain || orgLabel);
-          setTimeout(() => window.location.reload(), 900);
+          setBtnStatus(btn, 'Profile found', data.source_url || data.organization_domain || orgLabel);
+          setTimeout(() => window.location.reload(), 350);
         } else if (data.source_url) {
-          btn.textContent = `No email — see ${data.source_url.slice(0, 40)}…`;
+          setBtnStatus(btn, 'No email', data.source_url);
           btn.disabled = false;
         } else {
-          btn.textContent = data.note || 'Not found';
+          setBtnStatus(btn, 'Not found', data.note || 'Not found');
           btn.disabled = false;
         }
       } else {
@@ -460,8 +461,8 @@ document.querySelectorAll('.reclassify-btn').forEach(btn => {
       });
       const data = await res.json();
       if (data.ok) {
-        btn.textContent = data.classification || 'Done';
-        setTimeout(() => window.location.reload(), 700);
+        setBtnStatus(btn, 'Updated', data.classification || 'Updated');
+        setTimeout(() => window.location.reload(), 350);
       } else {
         btn.textContent = 'Error';
         btn.disabled = false;
@@ -474,14 +475,16 @@ document.querySelectorAll('.reclassify-btn').forEach(btn => {
 });
 
 document.querySelectorAll('.lead-row').forEach((row) => {
-  row.addEventListener('click', (event) => {
-    if (event.target.closest('a, button, input, label, form')) {
-      return;
-    }
-    const url = row.dataset.editUrl;
-    if (url) {
-      window.location.href = url;
-    }
+  row.querySelectorAll('.row-open-cell').forEach((cell) => {
+    cell.addEventListener('click', (event) => {
+      if (event.target.closest('a, button, input, label, form')) {
+        return;
+      }
+      const url = row.dataset.editUrl;
+      if (url) {
+        window.location.href = url;
+      }
+    });
   });
 });
 </script>

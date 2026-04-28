@@ -49,7 +49,7 @@ def client_dashboard(request):
 
 def _render_dashboard(request, *, portal_mode: bool):
     projects = client_portal.visible_projects_for_user(request.user)
-    workspace_snapshot = client_portal.workspace_portal_snapshot(projects, user=request.user)
+    workspace_snapshot = client_portal.workspace_portal_snapshot(projects, user=request.user, assigned_only=portal_mode)
     return render(request, 'core/dashboard.html', {
         'projects': projects,
         'workspace_snapshot': workspace_snapshot,
@@ -90,7 +90,7 @@ def _render_project_detail(request, project_id, *, portal_mode: bool):
         return HttpResponseForbidden('You do not have access to this project.')
     asset_form = StudyAssetForm()
     monday_dashboard = monday_sync.project_dashboard_snapshot(project)
-    client_snapshot = client_portal.project_client_snapshot(project, user=request.user)
+    client_snapshot = client_portal.project_client_snapshot(project, user=request.user, assigned_only=portal_mode)
     return render(request, 'core/project_detail.html', {
         'project': project,
         'assets': project.assets.all(),
@@ -183,22 +183,22 @@ def test_instantly(request):
 @login_required
 @require_POST
 def dashboard_ai(request):
-    return _dashboard_ai_response(request)
+    return _dashboard_ai_response(request, portal_mode=False)
 
 
 @login_required
 @require_POST
 def client_dashboard_ai(request):
-    return _dashboard_ai_response(request)
+    return _dashboard_ai_response(request, portal_mode=True)
 
 
-def _dashboard_ai_response(request):
+def _dashboard_ai_response(request, *, portal_mode: bool):
     question = (request.POST.get('question') or '').strip()
     if not question:
         return JsonResponse({'ok': False, 'error': 'Question is required.'}, status=400)
     projects = client_portal.visible_projects_for_user(request.user)
     try:
-        answer = client_portal.answer_workspace_question(projects, question, user=request.user)
+        answer = client_portal.answer_workspace_question(projects, question, user=request.user, assigned_only=portal_mode)
     except Exception as exc:  # noqa: BLE001
         return JsonResponse({'ok': False, 'error': str(exc)}, status=500)
     return JsonResponse({'ok': True, 'answer': answer})
@@ -207,16 +207,16 @@ def _dashboard_ai_response(request):
 @login_required
 @require_POST
 def project_ai(request, project_id):
-    return _project_ai_response(request, project_id)
+    return _project_ai_response(request, project_id, portal_mode=False)
 
 
 @login_required
 @require_POST
 def client_project_ai(request, project_id):
-    return _project_ai_response(request, project_id)
+    return _project_ai_response(request, project_id, portal_mode=True)
 
 
-def _project_ai_response(request, project_id):
+def _project_ai_response(request, project_id, *, portal_mode: bool):
     project = get_object_or_404(Project, pk=project_id)
     if not client_portal.user_can_access_project(request.user, project):
         return JsonResponse({'ok': False, 'error': 'Forbidden'}, status=403)
@@ -224,7 +224,7 @@ def _project_ai_response(request, project_id):
     if not question:
         return JsonResponse({'ok': False, 'error': 'Question is required.'}, status=400)
     try:
-        answer = client_portal.answer_project_question(project, question, user=request.user)
+        answer = client_portal.answer_project_question(project, question, user=request.user, assigned_only=portal_mode)
     except Exception as exc:  # noqa: BLE001
         return JsonResponse({'ok': False, 'error': str(exc)}, status=500)
     return JsonResponse({'ok': True, 'answer': answer})

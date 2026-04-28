@@ -7,14 +7,14 @@
     <div class="grid gap-8 xl:grid-cols-[1.5fr_0.8fr] xl:items-center">
       <div>
         <span class="cc-chip bg-white/10 text-white border border-white/15">Bridge workspace assistant</span>
-        <h1 class="mt-5 max-w-3xl text-4xl font-black tracking-tight md:text-5xl">See project analytics, handoffs, and campaign health without opening raw lead tables.</h1>
+        <h1 class="mt-5 max-w-3xl text-4xl font-black tracking-tight md:text-5xl">See project analytics, assigned leads, and campaign health without opening raw lead tables.</h1>
         <p class="mt-4 max-w-2xl text-sm text-white/80 md:text-base">
-          Clients land here after Monday auth, review safe project analytics, open Lini for board-level questions, and only see handoff leads that have been explicitly marked client-visible.
+          Clients land here after Monday auth, review safe project analytics, open Lini for board-level questions, and only see leads assigned to their Monday login.
         </p>
         <div class="mt-5 flex flex-wrap gap-2 text-xs text-white/80">
           <span class="cc-chip bg-white/10 text-white border border-white/15">{{ workspace_snapshot.summary.active_projects }} active projects</span>
           <span class="cc-chip bg-white/10 text-white border border-white/15">{{ workspace_snapshot.summary.total_leads }} total leads tracked</span>
-          <span class="cc-chip bg-white/10 text-white border border-white/15">{{ workspace_snapshot.summary.total_client_visible }} visible handoff rows</span>
+          <span class="cc-chip bg-white/10 text-white border border-white/15">{{ workspace_snapshot.summary.total_assigned }} assigned leads</span>
         </div>
       </div>
       <div class="portal-panel p-5 md:p-6">
@@ -29,8 +29,8 @@
             <p class="mt-2 text-3xl font-black">{{ workspace_snapshot.summary.pending_projects }}</p>
           </div>
           <div class="rounded-2xl border border-white/10 bg-white/10 px-4 py-4">
-            <p class="text-xs uppercase tracking-[0.24em] text-white/60">Client Visible Handoffs</p>
-            <p class="mt-2 text-3xl font-black">{{ workspace_snapshot.summary.total_client_visible }}</p>
+            <p class="text-xs uppercase tracking-[0.24em] text-white/60">Assigned Leads</p>
+            <p class="mt-2 text-3xl font-black">{{ workspace_snapshot.summary.total_assigned }}</p>
           </div>
         </div>
       </div>
@@ -50,13 +50,13 @@
           <div class="flex items-center justify-between gap-4">
             <div>
               <p class="text-sm font-bold text-cc-royal">Lini, your Bridge AI</p>
-              <p class="mt-1 text-sm text-cc-muted">Ask for project rollups, status patterns, or where handoff activity is building.</p>
+              <p class="mt-1 text-sm text-cc-muted">Ask for project rollups, status patterns, or where assigned lead activity is building.</p>
             </div>
             <span class="cc-chip ok">Online</span>
           </div>
           <div class="mt-4 flex flex-wrap gap-2">
             <button type="button" class="assistant-prompt cc-chip muted" data-question="Give me a quick summary of the active Bridge projects.">Project summary</button>
-            <button type="button" class="assistant-prompt cc-chip muted" data-question="Which projects have the highest client-visible handoff activity right now?">Handoff activity</button>
+            <button type="button" class="assistant-prompt cc-chip muted" data-question="Which projects have the highest assigned lead activity right now?">Assigned activity</button>
             <button type="button" class="assistant-prompt cc-chip muted" data-question="What stands out across project counts and statuses?">What stands out</button>
           </div>
           <div class="assistant-bubble mt-5 p-4 text-sm text-cc-muted">
@@ -92,8 +92,8 @@
           <p class="mt-2 text-sm text-cc-ink">Ask Lini to summarize project patterns, highlight risks, and explain operational changes using safe board metrics only.</p>
         </div>
         <div class="metric-card-soft px-4 py-4">
-          <p class="text-xs font-bold uppercase tracking-[0.24em] text-cc-muted">Handoffs</p>
-          <p class="mt-2 text-sm text-cc-ink">Only leads marked with the Monday <strong>Client Visible</strong> checkbox appear in the project handover area.</p>
+          <p class="text-xs font-bold uppercase tracking-[0.24em] text-cc-muted">Visibility</p>
+          <p class="mt-2 text-sm text-cc-ink">Project visibility is driven by the Monday <strong>Assigned Outreach Specialist</strong> column for the logged-in user.</p>
         </div>
       </div>
     </div>

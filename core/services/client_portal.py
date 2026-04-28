@@ -126,7 +126,38 @@ def _checkbox_value(item: dict, column_id: str) -> bool:
     return bool(parsed.get('checked') or parsed.get('value'))
 
 
-def _board_snapshot(project: Project, *, user=None) -> dict:
+def _user_assignment_identity(user) -> dict:
+    profile = getattr(user, 'clientprofile', None)
+    full_name = (user.get_full_name() or '').strip()
+    return {
+        'monday_id': str(getattr(profile, 'monday_id', '') or '').strip(),
+        'email': (getattr(user, 'email', '') or '').strip().lower(),
+        'full_name': full_name.lower(),
+        'username': (getattr(user, 'username', '') or '').strip().lower(),
+    }
+
+
+def _is_item_assigned_to_user(item: dict, column_id: str, user) -> bool:
+    if not column_id or not user:
+        return False
+    identity = _user_assignment_identity(user)
+    value = _column_value(item, column_id)
+    raw = value.get('value')
+    if raw:
+        try:
+            parsed = json.loads(raw)
+        except (TypeError, ValueError):
+            parsed = {}
+        assignees = parsed.get('personsAndTeams') or parsed.get('persons_and_teams') or []
+        if identity['monday_id'] and any(str(entry.get('id') or '') == identity['monday_id'] for entry in assignees):
+            return True
+    text = (value.get('text') or '').strip().lower()
+    if not text:
+        return False
+    return any(token and token in text for token in (identity['full_name'], identity['email'], identity['username']))
+
+
+def _board_snapshot(project: Project, *, user=None, assigned_only: bool = False) -> dict:
     board_id = str(project.monday_board_id or '')
     if not board_id:
         return {
@@ -138,9 +169,10 @@ def _board_snapshot(project: Project, *, user=None) -> dict:
             'status_series': _series_from_counter({}),
             'contact_type_series': _series_from_counter({}),
             'sequence_series': _series_from_counter({}),
-            'client_visible_items': [],
-            'client_visible_count': 0,
+            'assigned_items': [],
+            'assigned_count': 0,
             'campaign_linked_count': 0,
+            'with_email_count': 0,
         }
 
     sync_user = _sync_user(project, explicit_user=user)
@@ -154,9 +186,10 @@ def _board_snapshot(project: Project, *, user=None) -> dict:
             'status_series': _series_from_counter({}),
             'contact_type_series': _series_from_counter({}),
             'sequence_series': _series_from_counter({}),
-            'client_visible_items': [],
-            'client_visible_count': 0,
+            'assigned_items': [],
+            'assigned_count': 0,
             'campaign_linked_count': 0,
+            'with_email_count': 0,
         }
 
     try:
@@ -171,26 +204,33 @@ def _board_snapshot(project: Project, *, user=None) -> dict:
             'status_series': _series_from_counter({}),
             'contact_type_series': _series_from_counter({}),
             'sequence_series': _series_from_counter({}),
-            'client_visible_items': [],
-            'client_visible_count': 0,
+            'assigned_items': [],
+            'assigned_count': 0,
             'campaign_linked_count': 0,
+            'with_email_count': 0,
         }
 
     items = payload.get('items') or []
     columns = monday_client.bridge_column_map(payload.get('columns') or [])
+    if assigned_only and columns.get('assigned_specialist'):
+        items = [item for item in items if _is_item_assigned_to_user(item, columns['assigned_specialist'], user)]
+    elif assigned_only:
+        items = []
 
     group_counter = Counter((item.get('group') or {}).get('title') or 'Ungrouped' for item in items)
     status_counter = Counter()
     contact_type_counter = Counter()
     sequence_counter = Counter()
-    client_visible_items = []
+    assigned_items = []
     campaign_linked_count = 0
+    with_email_count = 0
 
     for item in items:
         status = _column_text(item, columns.get('campaign_status', ''))
         contact_type = _column_text(item, columns.get('classification', ''))
         sequence_step = _column_text(item, columns.get('sequence_step', ''))
         campaign_name = _column_text(item, columns.get('campaign_name', ''))
+        email = _column_text(item, columns.get('email', ''))
 
         if status:
             status_counter[status] += 1
@@ -200,13 +240,15 @@ def _board_snapshot(project: Project, *, user=None) -> dict:
             sequence_counter[sequence_step] += 1
         if campaign_name:
             campaign_linked_count += 1
+        if email:
+            with_email_count += 1
 
-        if columns.get('client_visible') and _checkbox_value(item, columns['client_visible']):
-            client_visible_items.append({
+        if columns.get('assigned_specialist') and _is_item_assigned_to_user(item, columns['assigned_specialist'], user):
+            assigned_items.append({
                 'name': item.get('name') or 'Lead',
                 'organization': _column_text(item, columns.get('organization', '')),
                 'role': _column_text(item, columns.get('role_specialty', '')),
-                'status': status or 'Visible',
+                'status': status or 'Assigned',
                 'interest': _column_text(item, columns.get('interest_level', '')),
                 'next_action': _column_text(item, columns.get('next_action', '')),
                 'group': (item.get('group') or {}).get('title') or '',
@@ -221,17 +263,18 @@ def _board_snapshot(project: Project, *, user=None) -> dict:
         'status_series': _series_from_counter(status_counter),
         'contact_type_series': _series_from_counter(contact_type_counter),
         'sequence_series': _series_from_counter(sequence_counter),
-        'client_visible_items': client_visible_items[:50],
-        'client_visible_count': len(client_visible_items),
+        'assigned_items': assigned_items[:50],
+        'assigned_count': len(assigned_items),
         'campaign_linked_count': campaign_linked_count,
+        'with_email_count': with_email_count,
     }
 
 
-def project_client_snapshot(project: Project, *, user=None) -> dict:
-    board_snapshot = _board_snapshot(project, user=user)
+def project_client_snapshot(project: Project, *, user=None, assigned_only: bool = False) -> dict:
+    board_snapshot = _board_snapshot(project, user=user, assigned_only=assigned_only)
     project_leads = project.project_leads.select_related('lead').all()
-    total_leads = project_leads.count()
-    with_email = project_leads.exclude(lead__email__isnull=True).exclude(lead__email='').count()
+    total_leads = board_snapshot['assigned_count'] if assigned_only else project_leads.count()
+    with_email = board_snapshot['with_email_count'] if assigned_only else project_leads.exclude(lead__email__isnull=True).exclude(lead__email='').count()
     campaigns = list(project.campaigns.all())
     active_campaigns = [campaign for campaign in campaigns if campaign.status == 'active']
     status_counter = Counter(pl.get_campaign_status_display() for pl in project_leads if pl.campaign_status)
@@ -253,7 +296,7 @@ def project_client_snapshot(project: Project, *, user=None) -> dict:
             {'label': 'Project Leads', 'value': total_leads, 'subtext': f'{with_email} with direct email'},
             {'label': 'Campaigns', 'value': len(campaigns), 'subtext': f'{len(active_campaigns)} active'},
             {'label': 'In Campaign', 'value': board_snapshot['campaign_linked_count'] or project_leads.exclude(campaign__isnull=True).count(), 'subtext': 'leads currently on a sequence'},
-            {'label': 'Client Visible', 'value': board_snapshot['client_visible_count'], 'subtext': 'human-approved handoff rows'},
+            {'label': 'Assigned To You', 'value': board_snapshot['assigned_count'], 'subtext': 'leads visible to this login'},
         ],
         'performance_stats': [
             {'label': 'Open Rate', 'value': round((opened / denominator) * 100, 1) if sent else 0, 'suffix': '%', 'subtext': f'{opened} opens'},
@@ -262,12 +305,12 @@ def project_client_snapshot(project: Project, *, user=None) -> dict:
             {'label': 'Board Groups', 'value': board_snapshot['groups_count'], 'subtext': project.monday_board_id or 'No Monday board'},
         ],
         'group_series': board_snapshot['group_series'],
-        'status_series': board_snapshot['status_series'] if board_snapshot['status_series'][0]['value'] else _series_from_counter(status_counter),
-        'contact_type_series': board_snapshot['contact_type_series'] if board_snapshot['contact_type_series'][0]['value'] else _series_from_counter(contact_counter),
+        'status_series': board_snapshot['status_series'] if assigned_only or board_snapshot['status_series'][0]['value'] else _series_from_counter(status_counter),
+        'contact_type_series': board_snapshot['contact_type_series'] if assigned_only or board_snapshot['contact_type_series'][0]['value'] else _series_from_counter(contact_counter),
         'sequence_series': board_snapshot['sequence_series'],
         'trend_series': trend,
-        'client_visible_items': board_snapshot['client_visible_items'],
-        'client_visible_count': board_snapshot['client_visible_count'],
+        'assigned_items': board_snapshot['assigned_items'],
+        'assigned_count': board_snapshot['assigned_count'],
         'campaign_cards': [
             {
                 'id': campaign.pk,
@@ -288,12 +331,12 @@ def project_client_snapshot(project: Project, *, user=None) -> dict:
                     {'label': 'Project Leads', 'value': total_leads},
                     {'label': 'Campaigns', 'value': len(campaigns)},
                     {'label': 'In Campaign', 'value': board_snapshot['campaign_linked_count'] or project_leads.exclude(campaign__isnull=True).count()},
-                    {'label': 'Client Visible', 'value': board_snapshot['client_visible_count']},
+                    {'label': 'Assigned To You', 'value': board_snapshot['assigned_count']},
                 ]
             ],
             'group_breakdown': board_snapshot['group_series'],
-            'status_breakdown': board_snapshot['status_series'] if board_snapshot['status_series'][0]['value'] else _series_from_counter(status_counter),
-            'contact_type_breakdown': board_snapshot['contact_type_series'] if board_snapshot['contact_type_series'][0]['value'] else _series_from_counter(contact_counter),
+            'status_breakdown': board_snapshot['status_series'] if assigned_only or board_snapshot['status_series'][0]['value'] else _series_from_counter(status_counter),
+            'contact_type_breakdown': board_snapshot['contact_type_series'] if assigned_only or board_snapshot['contact_type_series'][0]['value'] else _series_from_counter(contact_counter),
             'sequence_breakdown': board_snapshot['sequence_series'],
             'trend': trend,
         },
@@ -301,8 +344,8 @@ def project_client_snapshot(project: Project, *, user=None) -> dict:
     return snapshot
 
 
-def workspace_portal_snapshot(projects, *, user=None) -> dict:
-    snapshots = [project_client_snapshot(project, user=user) for project in projects]
+def workspace_portal_snapshot(projects, *, user=None, assigned_only: bool = True) -> dict:
+    snapshots = [project_client_snapshot(project, user=user, assigned_only=assigned_only) for project in projects]
     status_groups = {'Active': [], 'Pending': [], 'Completed': []}
     for snap in snapshots:
         status_label = (snap['status'] or '').lower()
@@ -318,7 +361,7 @@ def workspace_portal_snapshot(projects, *, user=None) -> dict:
         'pending_projects': len(status_groups['Pending']),
         'completed_projects': len(status_groups['Completed']),
         'total_leads': sum(item['headline_stats'][0]['value'] for item in snapshots),
-        'total_client_visible': sum(item['client_visible_count'] for item in snapshots),
+        'total_assigned': sum(item['assigned_count'] for item in snapshots),
     }
     return {
         'summary': summary,
@@ -332,7 +375,7 @@ def workspace_portal_snapshot(projects, *, user=None) -> dict:
                     'status': snap['status'],
                     'project_leads': snap['headline_stats'][0]['value'],
                     'campaigns': snap['headline_stats'][1]['value'],
-                    'client_visible': snap['client_visible_count'],
+                    'assigned': snap['assigned_count'],
                 }
                 for snap in snapshots
             ],
@@ -343,7 +386,7 @@ def workspace_portal_snapshot(projects, *, user=None) -> dict:
 CLIENT_PROJECT_AI_PROMPT = (
     "You are Lini, the client-facing Bridge analytics assistant. You answer only from the sanitized project analytics "
     "data provided. Never invent counts or expose hidden/raw lead data. Keep answers concise, helpful, and client-safe. "
-    "If asked about hidden lead-level details, explain that Bridge only exposes client-visible handoff rows here."
+    "If asked about hidden lead-level details, explain that Bridge only exposes leads assigned to the logged-in user here."
 )
 
 
@@ -353,12 +396,12 @@ CLIENT_WORKSPACE_AI_PROMPT = (
 )
 
 
-def answer_project_question(project: Project, question: str, *, user=None) -> str:
-    snapshot = project_client_snapshot(project, user=user)
+def answer_project_question(project: Project, question: str, *, user=None, assigned_only: bool = True) -> str:
+    snapshot = project_client_snapshot(project, user=user, assigned_only=assigned_only)
     prompt = (
         f"Project analytics snapshot:\n{json.dumps(snapshot['ai_context'], indent=2)}\n\n"
         f"Client question: {question.strip()}\n\n"
-        "Answer in 3-6 sentences. Reference the available metrics, trends, and handoff visibility where relevant."
+        "Answer in 3-6 sentences. Reference the available metrics, trends, and assignment visibility where relevant."
     )
     return AIService.complete(
         prompt=prompt,
@@ -369,8 +412,8 @@ def answer_project_question(project: Project, question: str, *, user=None) -> st
     )
 
 
-def answer_workspace_question(projects, question: str, *, user=None) -> str:
-    snapshot = workspace_portal_snapshot(projects, user=user)
+def answer_workspace_question(projects, question: str, *, user=None, assigned_only: bool = True) -> str:
+    snapshot = workspace_portal_snapshot(projects, user=user, assigned_only=assigned_only)
     prompt = (
         f"Workspace analytics snapshot:\n{json.dumps(snapshot['ai_context'], indent=2)}\n\n"
         f"Client question: {question.strip()}\n\n"

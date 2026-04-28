@@ -141,6 +141,7 @@ def bridge_column_map(columns: list[dict]) -> dict:
         'organization': '',
         'role_specialty': '',
         'classification': '',
+        'assigned_specialist': '',
         'email': '',
         'organization_email': '',
         'source_directory': '',
@@ -174,6 +175,8 @@ def bridge_column_map(columns: list[dict]) -> dict:
             mapping['role_specialty'] = col_id
         elif ('contact type' in title or 'classification' in title) and not mapping['classification']:
             mapping['classification'] = col_id
+        elif ('assigned outreach specialist' in title or 'assigned specialist' in title or 'outreach specialist' in title or 'assigned to' in title) and not mapping['assigned_specialist']:
+            mapping['assigned_specialist'] = col_id
         elif ('email address' in title or ('generic' in title and 'email' in title)) and not mapping['organization_email']:
             mapping['organization_email'] = col_id
         elif ('email address' in title or 'main contact email' in title or title == 'email' or 'email' in title) and not mapping['email']:

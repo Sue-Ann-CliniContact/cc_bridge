@@ -18,6 +18,45 @@ log = logging.getLogger(__name__)
 INSTANTLY_V1 = 'https://api.instantly.ai/api/v1'
 INSTANTLY_V2 = 'https://api.instantly.ai/api/v2'
 BATCH_SIZE = 50
+DEFAULT_INSTANTLY_TIMEZONE = 'America/Detroit'
+INSTANTLY_ALLOWED_TIMEZONES = {
+    'Etc/GMT+12', 'Etc/GMT+11', 'Etc/GMT+10', 'America/Anchorage', 'America/Dawson',
+    'America/Creston', 'America/Chihuahua', 'America/Boise', 'America/Belize', 'America/Chicago',
+    'America/Bahia_Banderas', 'America/Regina', 'America/Bogota', 'America/Detroit',
+    'America/Indiana/Marengo', 'America/Caracas', 'America/Asuncion', 'America/Glace_Bay',
+    'America/Campo_Grande', 'America/Anguilla', 'America/Santiago', 'America/St_Johns',
+    'America/Sao_Paulo', 'America/Argentina/La_Rioja', 'America/Araguaina', 'America/Godthab',
+    'America/Montevideo', 'America/Bahia', 'America/Noronha', 'America/Scoresbysund',
+    'Atlantic/Cape_Verde', 'Africa/Casablanca', 'America/Danmarkshavn', 'Europe/Isle_of_Man',
+    'Atlantic/Canary', 'Africa/Abidjan', 'Arctic/Longyearbyen', 'Europe/Belgrade', 'Africa/Ceuta',
+    'Europe/Sarajevo', 'Africa/Algiers', 'Africa/Windhoek', 'Asia/Nicosia', 'Asia/Beirut',
+    'Africa/Cairo', 'Asia/Damascus', 'Europe/Bucharest', 'Africa/Blantyre', 'Europe/Helsinki',
+    'Europe/Istanbul', 'Asia/Jerusalem', 'Africa/Tripoli', 'Asia/Amman', 'Asia/Baghdad',
+    'Europe/Kaliningrad', 'Asia/Aden', 'Africa/Addis_Ababa', 'Europe/Kirov', 'Europe/Astrakhan',
+    'Asia/Tehran', 'Asia/Dubai', 'Asia/Baku', 'Indian/Mahe', 'Asia/Tbilisi', 'Asia/Yerevan',
+    'Asia/Kabul', 'Antarctica/Mawson', 'Asia/Yekaterinburg', 'Asia/Karachi', 'Asia/Kolkata',
+    'Asia/Colombo', 'Asia/Kathmandu', 'Antarctica/Vostok', 'Asia/Dhaka', 'Asia/Rangoon',
+    'Antarctica/Davis', 'Asia/Novokuznetsk', 'Asia/Hong_Kong', 'Asia/Krasnoyarsk', 'Asia/Brunei',
+    'Australia/Perth', 'Asia/Taipei', 'Asia/Choibalsan', 'Asia/Irkutsk', 'Asia/Dili',
+    'Asia/Pyongyang', 'Australia/Adelaide', 'Australia/Darwin', 'Australia/Brisbane',
+    'Australia/Melbourne', 'Antarctica/DumontDUrville', 'Australia/Currie', 'Asia/Chita',
+    'Antarctica/Macquarie', 'Asia/Sakhalin', 'Pacific/Auckland', 'Etc/GMT-12', 'Pacific/Fiji',
+    'Asia/Anadyr', 'Asia/Kamchatka', 'Etc/GMT-13', 'Pacific/Apia',
+}
+INSTANTLY_TIMEZONE_ALIASES = {
+    'America/New_York': 'America/Detroit',
+    'US/Eastern': 'America/Detroit',
+    'EST': 'America/Detroit',
+    'America/Los_Angeles': 'America/Boise',
+    'US/Pacific': 'America/Boise',
+    'America/Denver': 'America/Boise',
+    'US/Mountain': 'America/Boise',
+    'America/Phoenix': 'America/Creston',
+    'America/Mexico_City': 'America/Chicago',
+    'US/Central': 'America/Chicago',
+    'Africa/Johannesburg': 'Africa/Blantyre',
+    'Europe/London': 'Europe/Isle_of_Man',
+}
 
 
 def _get_key(api_key: str | None = None) -> str:
@@ -25,6 +64,18 @@ def _get_key(api_key: str | None = None) -> str:
     if not key:
         raise RuntimeError('INSTANTLY_API_KEY is not configured')
     return key
+
+
+def _instantly_timezone() -> str:
+    configured = (
+        getattr(settings, 'INSTANTLY_TIMEZONE', '')
+        or getattr(settings, 'TIME_ZONE', '')
+        or DEFAULT_INSTANTLY_TIMEZONE
+    )
+    candidate = INSTANTLY_TIMEZONE_ALIASES.get(configured, configured)
+    if candidate in INSTANTLY_ALLOWED_TIMEZONES:
+        return candidate
+    return DEFAULT_INSTANTLY_TIMEZONE
 
 
 def ping(api_key: str | None = None) -> dict:
@@ -109,7 +160,7 @@ def create_campaign(
                     'name': 'Business hours (M-F, 9-5 ET)',
                     'timing': {'from': '09:00', 'to': '17:00'},
                     'days': {'0': False, '1': True, '2': True, '3': True, '4': True, '5': True, '6': False},
-                    'timezone': 'America/New_York',
+                    'timezone': _instantly_timezone(),
                 }
             ],
         },

@@ -48,6 +48,57 @@
         </div>
     </footer>
 
+    <script>
+    function initBulkSelectGroups(root = document) {
+      const groups = root.querySelectorAll('[data-bulk-select-group]');
+      groups.forEach((group) => {
+        const master = group.querySelector('[data-bulk-select-master]');
+        const items = () => Array.from(group.querySelectorAll('[data-bulk-select-item]'));
+        let lastChecked = null;
+
+        const syncMaster = () => {
+          if (!master) {
+            return;
+          }
+          const checkboxes = items();
+          const checkedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
+          master.checked = checkboxes.length > 0 && checkedCount === checkboxes.length;
+          master.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
+        };
+
+        items().forEach((checkbox) => {
+          checkbox.addEventListener('click', (event) => {
+            const checkboxes = items();
+            if (event.shiftKey && lastChecked && lastChecked !== checkbox) {
+              const start = checkboxes.indexOf(lastChecked);
+              const end = checkboxes.indexOf(checkbox);
+              if (start !== -1 && end !== -1) {
+                const [from, to] = start < end ? [start, end] : [end, start];
+                checkboxes.slice(from, to + 1).forEach((item) => {
+                  item.checked = lastChecked.checked;
+                });
+              }
+            }
+            lastChecked = checkbox;
+            syncMaster();
+          });
+          checkbox.addEventListener('change', syncMaster);
+        });
+
+        if (master) {
+          master.addEventListener('change', () => {
+            items().forEach((checkbox) => {
+              checkbox.checked = master.checked;
+            });
+            syncMaster();
+          });
+          syncMaster();
+        }
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => initBulkSelectGroups());
+    </script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

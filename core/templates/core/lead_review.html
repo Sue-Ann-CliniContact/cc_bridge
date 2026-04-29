@@ -129,12 +129,12 @@
 <!-- Table + bulk add form -->
 <form method="post" action="{% url 'add_leads_to_project' project.pk %}" class="mt-4">
   {% csrf_token %}
-  <div class="surface-card lead-table-card">
+  <div class="surface-card lead-table-card" data-bulk-select-group>
     <div class="lead-table-shell">
     <table class="lead-table w-full min-w-[1420px] text-sm">
       <thead class="bg-slate-50 text-xs uppercase tracking-wider text-cc-muted">
         <tr>
-          <th class="px-4 py-3 w-10 sticky-col sticky-col-check"><input type="checkbox" id="selectAll"></th>
+          <th class="px-4 py-3 w-10 sticky-col sticky-col-check"><input type="checkbox" data-bulk-select-master></th>
           <th class="px-4 py-3 text-left sticky-col sticky-col-name">Name</th>
           <th class="px-4 py-3 text-left">Organization</th>
           <th class="px-4 py-3 text-left">Location</th>
@@ -152,7 +152,7 @@
           <tr class="lead-row {% if lead.on_project %}bg-slate-50/60{% endif %}" data-edit-url="{% url 'lead_edit' lead.pk %}?next={{ request.get_full_path|urlencode }}">
             <td class="px-4 py-3 sticky-col sticky-col-check">
               {% if not lead.on_project %}
-                <input type="checkbox" name="lead_ids" value="{{ lead.pk }}" class="lead-select">
+                <input type="checkbox" name="lead_ids" value="{{ lead.pk }}" class="lead-select" data-bulk-select-item>
               {% else %}
                 <span class="cc-chip ok text-[10px] px-2">Added</span>
               {% endif %}
@@ -278,13 +278,6 @@
 
 {% block scripts %}
 <script>
-const selectAll = document.getElementById('selectAll');
-if (selectAll) {
-  selectAll.addEventListener('change', (e) => {
-    document.querySelectorAll('.lead-select').forEach(cb => cb.checked = e.target.checked);
-  });
-}
-
 function getCsrfToken() {
   return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 }

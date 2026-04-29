@@ -19,13 +19,19 @@
 </div>
 
 {% if can_manage_leads %}
-  <div class="surface-card mt-6 p-6 max-w-4xl">
+  <div class="surface-card mt-6 p-6 max-w-4xl" data-bulk-select-group>
     <div class="flex items-start justify-between gap-4">
       <div>
         <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Manage Leads</h2>
         <p class="mt-1 text-sm text-cc-muted">This campaign is still editable, so you can add or remove leads before launch.</p>
       </div>
-      <a href="{% url 'lead_review' project.pk %}?project_scope=on_project&hide_added=0" class="cc-btn cc-btn-ghost text-xs">Open project leads</a>
+      <div class="flex items-center gap-3">
+        <label class="text-xs text-cc-muted flex items-center gap-2" data-bulk-select-group-label>
+          <input type="checkbox" data-bulk-select-master>
+          Select all
+        </label>
+        <a href="{% url 'lead_review' project.pk %}?project_scope=on_project&hide_added=0" class="cc-btn cc-btn-ghost text-xs">Open project leads</a>
+      </div>
     </div>
 
     {% if available_project_leads %}
@@ -36,7 +42,7 @@
           <div class="divide-y divide-slate-100">
             {% for pl in available_project_leads %}
               <label class="flex items-start gap-3 px-4 py-3 text-sm">
-                <input type="checkbox" name="project_lead_ids" value="{{ pl.pk }}" class="mt-1">
+                <input type="checkbox" name="project_lead_ids" value="{{ pl.pk }}" class="mt-1" data-bulk-select-item>
                 <span>
                   <span class="block font-semibold text-cc-ink">{{ pl.lead.first_name }} {{ pl.lead.last_name|default:"" }}</span>
                   <span class="block text-xs text-cc-muted">{{ pl.lead.organization|default:"—" }} · {{ pl.lead.email }}</span>

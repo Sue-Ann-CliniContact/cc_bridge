@@ -30,7 +30,7 @@
     <p class="mt-1 text-xs text-cc-muted">Used as the Instantly campaign name and in internal reports.</p>
   </div>
 
-  <div class="surface-card overflow-hidden">
+  <div class="surface-card overflow-hidden" data-bulk-select-group>
     <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
       <div>
         <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Available leads</h2>
@@ -38,7 +38,7 @@
       </div>
       <div class="text-xs text-cc-muted">
         <label class="flex items-center gap-2">
-          <input type="checkbox" id="selectAll"> Select all
+          <input type="checkbox" data-bulk-select-master> Select all
         </label>
       </div>
     </div>
@@ -84,7 +84,7 @@
       <tbody class="divide-y divide-slate-100">
         {% for pl in available_leads %}
           <tr>
-            <td class="px-4 py-3"><input type="checkbox" name="project_lead_ids" value="{{ pl.pk }}" class="row-select"></td>
+            <td class="px-4 py-3"><input type="checkbox" name="project_lead_ids" value="{{ pl.pk }}" class="row-select" data-bulk-select-item></td>
             <td class="px-4 py-3 font-medium text-cc-ink">{{ pl.lead.first_name }} {{ pl.lead.last_name }}</td>
             <td class="px-4 py-3 text-cc-muted">{{ pl.lead.organization|default:"—" }}</td>
             <td class="px-4 py-3"><span class="cc-chip muted text-[10px]">{{ pl.lead.get_classification_display }}</span></td>
@@ -108,13 +108,6 @@
 </form>
 
 <script>
-const selectAll = document.getElementById('selectAll');
-if (selectAll) {
-  selectAll.addEventListener('change', (e) => {
-    document.querySelectorAll('.row-select').forEach(cb => cb.checked = e.target.checked);
-  });
-}
-
 const classificationFilter = document.getElementById('classificationFilter');
 const applyClassificationFilter = document.getElementById('applyClassificationFilter');
 if (classificationFilter && applyClassificationFilter) {

@@ -427,6 +427,23 @@ def _column_values(project_lead: ProjectLead, columns: dict) -> dict:
     return values
 
 
+def _campaign_column_values(project_lead: ProjectLead, columns: dict) -> dict:
+    values: dict = {}
+    if columns.get('campaign_status'):
+        values[columns['campaign_status']] = {'label': _status_label(project_lead)}
+    if columns.get('sequence_step'):
+        values[columns['sequence_step']] = _sequence_step(project_lead)
+    if columns.get('campaign_name'):
+        campaign_name = _campaign_name(project_lead)
+        if campaign_name:
+            values[columns['campaign_name']] = campaign_name
+    if columns.get('next_action'):
+        next_action = _next_action(project_lead)
+        if next_action:
+            values[columns['next_action']] = next_action
+    return values
+
+
 def _board_columns(user, board_id: str) -> dict:
     board = monday_client.get_board(user, board_id)
     return monday_client.bridge_column_map(board.get('columns') or [])
@@ -511,6 +528,33 @@ def sync_project_lead(project_lead: ProjectLead, *, user=None) -> dict:
     except Exception as exc:  # noqa: BLE001
         log.warning('Monday sync failed for ProjectLead %s: %s', project_lead.pk, exc)
         return {'ok': False, 'error': str(exc)}
+
+
+def sync_campaign_state(project_lead: ProjectLead, *, user=None) -> dict:
+    project = project_lead.project
+    board_id = str(project.monday_board_id or '')
+    if not board_id:
+        return {'ok': False, 'skipped': 'project has no monday_board_id'}
+    if not project_lead.monday_item_id:
+        return {'ok': False, 'skipped': 'project lead has no monday item id'}
+
+    sync_user = _sync_user(project, explicit_user=user)
+    if not sync_user:
+        return {'ok': False, 'skipped': 'no Monday user token available'}
+
+    try:
+        columns = _board_columns(sync_user, board_id)
+        values = _campaign_column_values(project_lead, columns)
+        if values:
+            monday_client.change_multiple_column_values(sync_user, board_id, project_lead.monday_item_id, values)
+        return {'ok': True, 'action': 'campaign_state_updated', 'item_id': project_lead.monday_item_id}
+    except Exception as exc:  # noqa: BLE001
+        log.warning('Monday campaign state sync failed for ProjectLead %s: %s', project_lead.pk, exc)
+        return {'ok': False, 'error': str(exc)}
+
+
+def sync_campaign_states(project_leads, *, user=None) -> list[dict]:
+    return [sync_campaign_state(pl, user=user) for pl in project_leads]
 
 
 def sync_event_update(project_lead: ProjectLead, event: OutreachEvent, *, user=None) -> dict:

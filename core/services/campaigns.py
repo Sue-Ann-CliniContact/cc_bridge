@@ -269,7 +269,7 @@ def launch_campaign(
         }
 
     try:
-        monday_results = monday_sync.sync_project_leads(
+        monday_results = monday_sync.sync_campaign_states(
             campaign.project_leads.select_related('project', 'lead').all(),
             user=user,
         )

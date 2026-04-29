@@ -26,34 +26,35 @@ def _recipient_type(lead: Lead) -> str:
 
 def _formal_salutation(lead: Lead) -> str:
     role_text = (lead.role or '').lower()
+    specialty_text = (lead.specialty or '').lower()
     last_name = (lead.last_name or '').strip()
     first_name = (lead.first_name or '').strip()
     organization = (lead.organization or '').strip()
+    clinicianish = any(
+        token in f'{role_text} {specialty_text}'
+        for token in ('dr', 'physician', 'medical', 'geneticist', 'neurolog', 'pediatric', 'clinician', 'm.d', 'md')
+    )
+    professorish = 'professor' in role_text or role_text.startswith('prof ') or ' prof.' in role_text
 
     if last_name:
-        if 'professor' in role_text or role_text.startswith('prof ') or ' prof.' in role_text:
-            return f'Prof. {last_name}'
-        if (
-            'dr' in role_text
-            or 'physician' in role_text
-            or 'medical' in role_text
-            or 'geneticist' in role_text
-            or 'neurolog' in role_text
-            or 'pediatric' in role_text
-        ):
-            return f'Dr. {last_name}'
-        return first_name or last_name
+        if professorish:
+            return f'Dear Prof. {last_name}'
+        if clinicianish:
+            return f'Dear Dr. {last_name}'
+        if first_name:
+            return f'Hi {first_name}'
+        return f'Hi {last_name}'
     if organization:
-        return f'{organization} team'
-    return 'there'
+        return f'Hello {organization} team'
+    return 'Hello'
 
 
 def _greeting_name(lead: Lead) -> str:
     if lead.first_name:
-        return lead.first_name.strip()
+        return f"Hi {lead.first_name.strip()}"
     if lead.organization:
-        return f'{lead.organization} team'
-    return 'there'
+        return f"Hello {lead.organization.strip()} team"
+    return 'Hello'
 
 
 def _lead_personalization(lead: Lead, project_lead: ProjectLead, campaign: Campaign) -> dict:

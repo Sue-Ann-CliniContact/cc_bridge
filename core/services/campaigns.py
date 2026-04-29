@@ -217,6 +217,7 @@ def launch_campaign(
 
     # 1) Create the Instantly campaign, or reuse the created campaign during a retry.
     instantly_campaign_id = str(campaign.instantly_campaign_id or '')
+    sequence_update_warning = ''
     if not instantly_campaign_id:
         try:
             created = instantly_client.create_campaign(
@@ -228,6 +229,14 @@ def launch_campaign(
             return {'ok': False, 'error': f'Instantly create_campaign failed: {exc}'}
 
         instantly_campaign_id = created['id']
+    else:
+        try:
+            instantly_client.update_campaign_sequence(
+                campaign_id=instantly_campaign_id,
+                sequence_steps=clean_steps,
+            )
+        except Exception as exc:  # noqa: BLE001
+            sequence_update_warning = f'Instantly sequence update warning: {exc}'
 
     # 2) Push leads
     try:
@@ -281,6 +290,11 @@ def launch_campaign(
     except Exception as exc:  # noqa: BLE001
         push_errors = push_result.get('errors', [])
         push_errors.append(f'Monday sync failed after launch: {exc}')
+        push_result['errors'] = push_errors
+
+    if sequence_update_warning:
+        push_errors = push_result.get('errors', [])
+        push_errors.append(sequence_update_warning)
         push_result['errors'] = push_errors
 
     return {

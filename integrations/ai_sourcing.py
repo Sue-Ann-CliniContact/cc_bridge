@@ -770,9 +770,11 @@ EMAIL_SEQUENCE_SYSTEM_PROMPT = (
     "the organization or team and do not pretend you know an individual.\n"
     "- You MAY use {{formal_salutation}}, {{greeting_name}}, or {{organization_name}} once near the opening; avoid "
     "stuffing multiple merge vars throughout the email.\n"
-    "- End each email with a single closing line like 'Best,\\nThe CliniContact "
-    "team' — the actual sending signature is applied by Instantly per sending "
-    "account.\n\n"
+    "- Write each body as 3-5 short paragraphs separated by blank lines. Do not "
+    "return a single dense paragraph.\n"
+    "- Do not include a full signature block or 'The CliniContact team'. If a "
+    "closing is needed, end with one simple line like 'Best,' only. Bridge will "
+    "append the sender signature when it sends to Instantly.\n\n"
     "Return a 3-step sequence via the return_email_sequence tool:\n"
     "Step 1 (delay 0): cold intro. Subject ≤ 60 chars. Body 120-180 words. "
     "Name the indication, describe who the study is for, and ask whether they "
@@ -929,7 +931,7 @@ def _fallback_email_sequence(*, study_code: str, study_indication: str, patient_
                 f"I am reaching out from CliniContact regarding {study_code}, a study focused on {indication}. "
                 f"{population} We are looking to connect with clinicians and organizations who may be open to learning more about the study and, if appropriate, referring potentially eligible participants.\n\n"
                 "If this is relevant to your practice or organization, I would be happy to send the study flyer or connect you with the study team for a brief discussion.\n\n"
-                "Best,\nThe CliniContact team"
+                "Best,"
             ),
             'rationale': 'Cold introduction focused on collaboration and referral interest.',
             'approved': False,
@@ -942,7 +944,7 @@ def _fallback_email_sequence(*, study_code: str, study_indication: str, patient_
                 "{{formal_salutation}},\n\n"
                 f"I wanted to follow up on my note about {study_code}. If it would be helpful, I can send the study flyer or connect you with the study team so you can quickly assess whether this could be relevant for the patients you support.\n\n"
                 "Please let me know if you would like me to share those materials.\n\n"
-                "Best,\nThe CliniContact team"
+                "Best,"
             ),
             'rationale': 'Brief follow-up that offers materials without adding new claims.',
             'approved': False,
@@ -955,7 +957,7 @@ def _fallback_email_sequence(*, study_code: str, study_indication: str, patient_
                 "{{formal_salutation}},\n\n"
                 f"I am sending one last follow-up regarding {study_code}, which is focused on {indication}. If you think this may be relevant for your patients or community, I would be glad to send the flyer or connect you with the study team. "
                 "If there is someone else on your team who would be better for this conversation, I would also appreciate being pointed in the right direction.\n\n"
-                "Best,\nThe CliniContact team"
+                "Best,"
             ),
             'rationale': 'Soft close that still leaves a clear next step.',
             'approved': False,

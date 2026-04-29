@@ -6,8 +6,10 @@ the known-working original.
 """
 from __future__ import annotations
 
+import re
 import logging
 import time
+from html import escape
 from typing import Iterable
 
 import requests
@@ -57,6 +59,13 @@ INSTANTLY_TIMEZONE_ALIASES = {
     'Africa/Johannesburg': 'Africa/Blantyre',
     'Europe/London': 'Europe/Isle_of_Man',
 }
+DEFAULT_OUTREACH_SIGNATURE = """Louis De Souza
+Community Outreach Specialist
+CliniContact
+Accelerating research through adaptive participant recruitment.
+P +1 (267) 295-4353
+W clinicontact.com
+Visit CliniContact: https://www.clinicontact.com"""
 
 
 def _get_key(api_key: str | None = None) -> str:
@@ -76,6 +85,63 @@ def _instantly_timezone() -> str:
     if candidate in INSTANTLY_ALLOWED_TIMEZONES:
         return candidate
     return DEFAULT_INSTANTLY_TIMEZONE
+
+
+def _outreach_signature() -> str:
+    return (getattr(settings, 'OUTREACH_EMAIL_SIGNATURE', '') or DEFAULT_OUTREACH_SIGNATURE).strip()
+
+
+def _strip_generic_signature(body: str) -> str:
+    patterns = [
+        r'\n\s*Best,?\s*\n\s*The CliniContact team\s*$',
+        r'\n\s*Best regards,?\s*\n\s*The CliniContact team\s*$',
+        r'\n\s*Sincerely,?\s*\n\s*The CliniContact team\s*$',
+    ]
+    cleaned = body.strip()
+    for pattern in patterns:
+        cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+    return cleaned.strip()
+
+
+def _linkify_escaped_line(line: str) -> str:
+    return re.sub(
+        r'(https?://[^\s<]+|www\.[^\s<]+|\bclinicontact\.com\b)',
+        lambda match: f'<a href="{match.group(0) if match.group(0).startswith("http") else "https://" + match.group(0)}">{match.group(0)}</a>',
+        line,
+    )
+
+
+def _format_email_body(body: str) -> str:
+    cleaned = _strip_generic_signature(body or '')
+    paragraphs = [
+        paragraph.strip()
+        for paragraph in re.split(r'\n\s*\n', cleaned)
+        if paragraph.strip()
+    ]
+    html_parts = []
+    for paragraph in paragraphs:
+        lines = [_linkify_escaped_line(escape(line.strip())) for line in paragraph.splitlines() if line.strip()]
+        if lines:
+            html_parts.append(f'<p>{"<br>".join(lines)}</p>')
+
+    signature_lines = [_linkify_escaped_line(escape(line.strip())) for line in _outreach_signature().splitlines() if line.strip()]
+    if signature_lines:
+        html_parts.append(f'<p>{"<br>".join(signature_lines)}</p>')
+    return '\n'.join(html_parts)
+
+
+def _sequence_payload_steps(sequence_steps: list[dict]) -> list[dict]:
+    return [
+        {
+            'type': 'email',
+            'delay': int(step.get('delay_days') or 0),
+            'variants': [{
+                'subject': step.get('subject') or '',
+                'body': _format_email_body(step.get('body') or ''),
+            }],
+        }
+        for step in sequence_steps
+    ]
 
 
 def ping(api_key: str | None = None) -> dict:
@@ -140,17 +206,7 @@ def create_campaign(
     if not sending_account_emails:
         raise RuntimeError('At least one sending account email is required')
 
-    steps = [
-        {
-            'type': 'email',
-            'delay': int(step.get('delay_days') or 0),
-            'variants': [{
-                'subject': step.get('subject') or '',
-                'body': step.get('body') or '',
-            }],
-        }
-        for step in sequence_steps
-    ]
+    steps = _sequence_payload_steps(sequence_steps)
 
     payload = {
         'name': name,
@@ -188,6 +244,31 @@ def create_campaign(
     if not campaign_id:
         raise RuntimeError(f'Instantly campaign create: no id in response {str(data)[:300]}')
     return {'id': campaign_id, 'raw': data}
+
+
+def update_campaign_sequence(
+    *,
+    campaign_id: str,
+    sequence_steps: list[dict],
+    api_key: str | None = None,
+) -> dict:
+    """Patch an existing Instantly campaign sequence with formatted Bridge copy."""
+    key = _get_key(api_key)
+    if not campaign_id:
+        raise RuntimeError('campaign_id is required')
+    if not sequence_steps:
+        raise RuntimeError('Cannot update campaign with empty sequence')
+
+    payload = {'sequences': [{'steps': _sequence_payload_steps(sequence_steps)}]}
+    r = requests.patch(
+        f'{INSTANTLY_V2}/campaigns/{campaign_id}',
+        json=payload,
+        headers={'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'},
+        timeout=30,
+    )
+    if r.status_code >= 400:
+        raise RuntimeError(f'Instantly campaign update {r.status_code}: {r.text[:500]}')
+    return r.json() or {}
 
 
 def get_campaigns(api_key: str | None = None) -> list[dict]:

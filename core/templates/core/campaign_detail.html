@@ -74,9 +74,7 @@
 {% endif %}
 
 <!-- Sequence editor -->
-<form method="post" action="{% url 'campaign_update_sequence' campaign.pk %}" class="mt-6">
-  {% csrf_token %}
-
+<div class="mt-6">
   <div class="flex items-center justify-between max-w-4xl">
     <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Sequence</h2>
     <form method="post" action="{% url 'campaign_redraft' campaign.pk %}" class="inline">
@@ -85,52 +83,56 @@
     </form>
   </div>
 
-  {% if sequence_steps %}
-    <div class="mt-4 space-y-4 max-w-4xl">
-      {% for step in sequence_steps %}
-        <div class="surface-card p-6">
-          <div class="flex items-start justify-between mb-3 gap-4">
-            <div>
-              <p class="text-xs font-bold uppercase tracking-wider text-cc-royal">Step {{ step.step_num|default:forloop.counter }}</p>
-              {% if step.rationale %}<p class="mt-1 text-xs text-cc-muted">{{ step.rationale }}</p>{% endif %}
-            </div>
-            <label class="flex items-center gap-2 text-sm">
-              <input type="checkbox" name="step_{{ forloop.counter0 }}_approved" {% if step.approved %}checked{% endif %}>
-              <span class="font-semibold {% if step.approved %}text-emerald-700{% else %}text-cc-muted{% endif %}">Approved</span>
-            </label>
-          </div>
+  <form method="post" action="{% url 'campaign_update_sequence' campaign.pk %}" class="mt-4">
+    {% csrf_token %}
 
-          <div class="grid gap-3 md:grid-cols-[1fr_120px]">
-            <div>
-              <label class="cc-label">Subject</label>
-              <input type="text" name="step_{{ forloop.counter0 }}_subject" value="{{ step.subject }}" class="cc-input">
+    {% if sequence_steps %}
+      <div class="space-y-4 max-w-4xl">
+        {% for step in sequence_steps %}
+          <div class="surface-card p-6">
+            <div class="flex items-start justify-between mb-3 gap-4">
+              <div>
+                <p class="text-xs font-bold uppercase tracking-wider text-cc-royal">Step {{ step.step_num|default:forloop.counter }}</p>
+                {% if step.rationale %}<p class="mt-1 text-xs text-cc-muted">{{ step.rationale }}</p>{% endif %}
+              </div>
+              <label class="flex items-center gap-2 text-sm">
+                <input type="checkbox" name="step_{{ forloop.counter0 }}_approved" {% if step.approved %}checked{% endif %}>
+                <span class="font-semibold {% if step.approved %}text-emerald-700{% else %}text-cc-muted{% endif %}">Approved</span>
+              </label>
             </div>
-            <div>
-              <label class="cc-label">Delay (days)</label>
-              <input type="number" name="step_{{ forloop.counter0 }}_delay_days" value="{{ step.delay_days|default:0 }}" min="0" class="cc-input">
-            </div>
-          </div>
-          <div class="mt-3">
-            <label class="cc-label">Body</label>
-            <textarea name="step_{{ forloop.counter0 }}_body" rows="9" class="cc-input font-mono text-xs">{{ step.body }}</textarea>
-            <p class="mt-1 text-xs text-cc-muted">
-              Merge vars: <code>{% templatetag openvariable %}formal_salutation{% templatetag closevariable %}</code>, <code>{% templatetag openvariable %}greeting_name{% templatetag closevariable %}</code>, <code>{% templatetag openvariable %}organization_name{% templatetag closevariable %}</code>.
-              Use <code>{% templatetag openvariable %}landing_page_url{% templatetag closevariable %}</code> only for later-stage follow-up after a provider confirms interest.
-            </p>
-          </div>
-        </div>
-      {% endfor %}
-    </div>
 
-    <div class="mt-4 flex justify-end gap-3 max-w-4xl">
-      <button type="submit" class="cc-btn cc-btn-primary">Save edits</button>
-    </div>
-  {% else %}
-    <div class="surface-card mt-4 p-12 text-center max-w-4xl">
-      <p class="text-sm text-cc-muted">No draft yet. Use "Redraft with AI" above to have Claude draft the 3-step sequence from your study assets.</p>
-    </div>
-  {% endif %}
-</form>
+            <div class="grid gap-3 md:grid-cols-[1fr_120px]">
+              <div>
+                <label class="cc-label">Subject</label>
+                <input type="text" name="step_{{ forloop.counter0 }}_subject" value="{{ step.subject }}" class="cc-input">
+              </div>
+              <div>
+                <label class="cc-label">Delay (days)</label>
+                <input type="number" name="step_{{ forloop.counter0 }}_delay_days" value="{{ step.delay_days|default:0 }}" min="0" class="cc-input">
+              </div>
+            </div>
+            <div class="mt-3">
+              <label class="cc-label">Body</label>
+              <textarea name="step_{{ forloop.counter0 }}_body" rows="9" class="cc-input font-mono text-xs">{{ step.body }}</textarea>
+              <p class="mt-1 text-xs text-cc-muted">
+                Merge vars: <code>{% templatetag openvariable %}formal_salutation{% templatetag closevariable %}</code>, <code>{% templatetag openvariable %}greeting_name{% templatetag closevariable %}</code>, <code>{% templatetag openvariable %}organization_name{% templatetag closevariable %}</code>.
+                Use <code>{% templatetag openvariable %}landing_page_url{% templatetag closevariable %}</code> only for later-stage follow-up after a provider confirms interest.
+              </p>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+
+      <div class="mt-4 flex justify-end gap-3 max-w-4xl">
+        <button type="submit" class="cc-btn cc-btn-primary">Save edits</button>
+      </div>
+    {% else %}
+      <div class="surface-card p-12 text-center max-w-4xl">
+        <p class="text-sm text-cc-muted">No draft yet. Use "Redraft with AI" above to have Claude draft the 3-step sequence from your study assets.</p>
+      </div>
+    {% endif %}
+  </form>
+</div>
 
 <!-- Launch -->
 {% if campaign.status != 'active' and campaign.status != 'completed' and sequence_steps %}

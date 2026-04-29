@@ -96,6 +96,9 @@ def _strip_generic_signature(body: str) -> str:
         r'\n\s*Best,?\s*\n\s*The CliniContact team\s*$',
         r'\n\s*Best regards,?\s*\n\s*The CliniContact team\s*$',
         r'\n\s*Sincerely,?\s*\n\s*The CliniContact team\s*$',
+        r'\s+Best,?\s+The CliniContact team\s*$',
+        r'\s+Best regards,?\s+The CliniContact team\s*$',
+        r'\s+Sincerely,?\s+The CliniContact team\s*$',
     ]
     cleaned = body.strip()
     for pattern in patterns:
@@ -118,6 +121,8 @@ def _format_email_body(body: str) -> str:
         for paragraph in re.split(r'\n\s*\n', cleaned)
         if paragraph.strip()
     ]
+    if len(paragraphs) == 1 and len(paragraphs[0]) > 650:
+        paragraphs = _split_dense_paragraph(paragraphs[0])
     html_parts = []
     for paragraph in paragraphs:
         lines = [_linkify_escaped_line(escape(line.strip())) for line in paragraph.splitlines() if line.strip()]
@@ -128,6 +133,27 @@ def _format_email_body(body: str) -> str:
     if signature_lines:
         html_parts.append(f'<p>{"<br>".join(signature_lines)}</p>')
     return '\n'.join(html_parts)
+
+
+def _split_dense_paragraph(text: str) -> list[str]:
+    """Repair older AI drafts that were stored as one long run-on paragraph."""
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    paragraphs: list[str] = []
+    current: list[str] = []
+    current_len = 0
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+        if current and current_len + len(sentence) > 430:
+            paragraphs.append(' '.join(current))
+            current = []
+            current_len = 0
+        current.append(sentence)
+        current_len += len(sentence) + 1
+    if current:
+        paragraphs.append(' '.join(current))
+    return paragraphs or [text.strip()]
 
 
 def _sequence_payload_steps(sequence_steps: list[dict]) -> list[dict]:

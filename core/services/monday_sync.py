@@ -536,7 +536,12 @@ def sync_campaign_state(project_lead: ProjectLead, *, user=None) -> dict:
     if not board_id:
         return {'ok': False, 'skipped': 'project has no monday_board_id'}
     if not project_lead.monday_item_id:
-        return {'ok': False, 'skipped': 'project lead has no monday item id'}
+        lead_sync = sync_project_lead(project_lead, user=user)
+        if not lead_sync.get('ok'):
+            return {'ok': False, 'skipped': lead_sync.get('skipped') or lead_sync.get('error') or 'project lead has no monday item id'}
+        project_lead.refresh_from_db(fields=['monday_item_id', 'updated_at'])
+        if not project_lead.monday_item_id:
+            return {'ok': False, 'skipped': 'project lead has no monday item id'}
 
     sync_user = _sync_user(project, explicit_user=user)
     if not sync_user:

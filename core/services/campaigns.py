@@ -158,7 +158,6 @@ def update_sequence(campaign: Campaign, *, steps: list[dict]) -> Campaign:
     return campaign
 
 
-@transaction.atomic
 def launch_campaign(
     campaign: Campaign,
     *,
@@ -228,24 +227,45 @@ def launch_campaign(
     instantly_campaign_id = created['id']
 
     # 2) Push leads
-    push_result = instantly_client.push_leads(
-        leads=payload_leads,
-        campaign_id=instantly_campaign_id,
-    )
+    try:
+        push_result = instantly_client.push_leads(
+            leads=payload_leads,
+            campaign_id=instantly_campaign_id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        campaign.instantly_campaign_id = str(instantly_campaign_id)
+        campaign.save(update_fields=['instantly_campaign_id', 'updated_at'])
+        return {
+            'ok': False,
+            'error': f'Instantly campaign was created ({instantly_campaign_id}) but lead push failed: {exc}',
+        }
 
     # 3) Mark campaign active + leads queued
-    campaign.instantly_campaign_id = str(instantly_campaign_id)
-    campaign.status = Campaign.STATUS_ACTIVE
-    campaign.started_at = timezone.now()
-    campaign.save(update_fields=['instantly_campaign_id', 'status', 'started_at', 'updated_at'])
+    try:
+        with transaction.atomic():
+            campaign.instantly_campaign_id = str(instantly_campaign_id)
+            campaign.status = Campaign.STATUS_ACTIVE
+            campaign.started_at = timezone.now()
+            campaign.save(update_fields=['instantly_campaign_id', 'status', 'started_at', 'updated_at'])
 
-    ProjectLead.objects.filter(campaign=campaign, lead__email__in=[pl['email'] for pl in payload_leads]).update(
-        campaign_status=ProjectLead.STATUS_QUEUED,
-    )
-    monday_sync.sync_project_leads(
-        campaign.project_leads.select_related('project', 'lead').all(),
-        user=user,
-    )
+            ProjectLead.objects.filter(campaign=campaign, lead__email__in=[pl['email'] for pl in payload_leads]).update(
+                campaign_status=ProjectLead.STATUS_QUEUED,
+            )
+    except Exception as exc:  # noqa: BLE001
+        return {
+            'ok': False,
+            'error': f'Instantly campaign was created ({instantly_campaign_id}) but Bridge status update failed: {exc}',
+        }
+
+    try:
+        monday_sync.sync_project_leads(
+            campaign.project_leads.select_related('project', 'lead').all(),
+            user=user,
+        )
+    except Exception as exc:  # noqa: BLE001
+        push_errors = push_result.get('errors', [])
+        push_errors.append(f'Monday sync failed after launch: {exc}')
+        push_result['errors'] = push_errors
 
     return {
         'ok': True,

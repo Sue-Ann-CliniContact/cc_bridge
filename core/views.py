@@ -6,6 +6,7 @@ from django.conf import settings as django_settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.db.models import Count, Exists, OuterRef, Q
 from django.http import HttpResponseForbidden
 from django.http import JsonResponse
@@ -716,21 +717,35 @@ def campaign_add_leads(request, campaign_id):
         messages.error(request, 'Leads can only be changed while the campaign is still editable.')
         return redirect('campaign_detail', campaign_id=campaign.pk)
 
-    project_lead_ids = [int(x) for x in request.POST.getlist('project_lead_ids') if x.isdigit()]
+    project_lead_ids = sorted({int(x) for x in request.POST.getlist('project_lead_ids') if x.isdigit()})
     if not project_lead_ids:
         messages.warning(request, 'Select at least one project lead to add.')
         return redirect('campaign_detail', campaign_id=campaign.pk)
 
-    attachable = list(
-        ProjectLead.objects
-        .filter(project=campaign.project, pk__in=project_lead_ids, campaign__isnull=True)
-        .select_related('project', 'lead')
-    )
-    ProjectLead.objects.filter(pk__in=[pl.pk for pl in attachable]).update(campaign=campaign)
-    updated_rows = list(ProjectLead.objects.filter(pk__in=[pl.pk for pl in attachable]).select_related('project', 'lead'))
-    if updated_rows:
-        monday_sync.sync_project_leads(updated_rows, user=request.user)
-    messages.success(request, f'Added {len(updated_rows)} lead{"s" if len(updated_rows) != 1 else ""} to {campaign.name}.')
+    try:
+        attachable = list(
+            ProjectLead.objects
+            .filter(project=campaign.project, pk__in=project_lead_ids, campaign__isnull=True)
+            .select_related('project', 'lead')
+        )
+        if not attachable:
+            messages.warning(request, 'Those leads are already attached or no longer available for this campaign.')
+            return redirect('campaign_detail', campaign_id=campaign.pk)
+
+        attachable_ids = [pl.pk for pl in attachable]
+        with transaction.atomic():
+            ProjectLead.objects.filter(pk__in=attachable_ids).update(campaign=campaign)
+
+        updated_rows = list(
+            ProjectLead.objects
+            .filter(pk__in=attachable_ids)
+            .select_related('project', 'lead', 'campaign')
+        )
+        if updated_rows:
+            monday_sync.sync_project_leads(updated_rows, user=request.user)
+        messages.success(request, f'Added {len(updated_rows)} lead{"s" if len(updated_rows) != 1 else ""} to {campaign.name}.')
+    except Exception as exc:  # noqa: BLE001
+        messages.error(request, f'Could not add leads to the campaign: {exc}')
     return redirect('campaign_detail', campaign_id=campaign.pk)
 
 

@@ -249,6 +249,27 @@ def change_multiple_column_values(user, board_id: str, item_id: str, column_valu
     return (data.get('change_multiple_column_values') or {})
 
 
+def change_column_value(user, board_id: str, item_id: str, column_id: str, value) -> dict:
+    query = """
+    mutation ($boardId: ID!, $itemId: ID!, $columnId: String!, $value: JSON!) {
+      change_column_value(board_id: $boardId, item_id: $itemId, column_id: $columnId, value: $value) {
+        id
+      }
+    }
+    """
+    data = graphql(
+        user,
+        query,
+        {
+            'boardId': board_id,
+            'itemId': item_id,
+            'columnId': column_id,
+            'value': json.dumps(value),
+        },
+    )
+    return (data.get('change_column_value') or {})
+
+
 def create_board(user, *, name: str, workspace_id: str | None = None, board_kind: str = 'public') -> dict:
     wid = workspace_id or settings.MONDAY_WORKSPACE_ID
     if not wid:

@@ -444,6 +444,23 @@ def _campaign_column_values(project_lead: ProjectLead, columns: dict) -> dict:
     return values
 
 
+def _safe_change_column_values(user, board_id: str, item_id: str, values: dict) -> list[str]:
+    if not values:
+        return []
+    try:
+        monday_client.change_multiple_column_values(user, board_id, item_id, values)
+        return []
+    except Exception as bulk_exc:  # noqa: BLE001
+        errors = [f'bulk update failed: {bulk_exc}']
+
+    for column_id, value in values.items():
+        try:
+            monday_client.change_column_value(user, board_id, item_id, column_id, value)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f'{column_id}: {exc}')
+    return errors
+
+
 def _board_columns(user, board_id: str) -> dict:
     board = monday_client.get_board(user, board_id)
     return monday_client.bridge_column_map(board.get('columns') or [])
@@ -511,20 +528,25 @@ def sync_project_lead(project_lead: ProjectLead, *, user=None) -> dict:
         columns = _ensure_board_schema(sync_user, board_id)
         item_name = _item_name_for_lead(project_lead.lead)
         values = _column_values(project_lead, columns)
+        update_errors = []
         if project_lead.monday_item_id:
-            monday_client.change_multiple_column_values(sync_user, board_id, project_lead.monday_item_id, values)
+            update_errors = _safe_change_column_values(sync_user, board_id, project_lead.monday_item_id, values)
             action = 'updated'
         else:
             groups = _ensure_groups(sync_user, board_id)
             target_group = groups.get(_target_group_name(project_lead))
-            created = monday_client.create_item(sync_user, board_id, item_name=item_name, column_values=values, group_id=target_group)
+            created = monday_client.create_item(sync_user, board_id, item_name=item_name, column_values={}, group_id=target_group)
             item_id = str(created.get('id') or '')
             if item_id:
                 project_lead.monday_item_id = item_id
                 project_lead.save(update_fields=['monday_item_id', 'updated_at'])
+                update_errors = _safe_change_column_values(sync_user, board_id, item_id, values)
             action = 'created'
         _sync_group(project_lead, sync_user)
-        return {'ok': True, 'action': action, 'item_id': project_lead.monday_item_id}
+        result = {'ok': True, 'action': action, 'item_id': project_lead.monday_item_id}
+        if update_errors:
+            result['warnings'] = update_errors[:5]
+        return result
     except Exception as exc:  # noqa: BLE001
         log.warning('Monday sync failed for ProjectLead %s: %s', project_lead.pk, exc)
         return {'ok': False, 'error': str(exc)}
@@ -551,8 +573,13 @@ def sync_campaign_state(project_lead: ProjectLead, *, user=None) -> dict:
         columns = _board_columns(sync_user, board_id)
         values = _campaign_column_values(project_lead, columns)
         if values:
-            monday_client.change_multiple_column_values(sync_user, board_id, project_lead.monday_item_id, values)
-        return {'ok': True, 'action': 'campaign_state_updated', 'item_id': project_lead.monday_item_id}
+            update_errors = _safe_change_column_values(sync_user, board_id, project_lead.monday_item_id, values)
+        else:
+            update_errors = []
+        result = {'ok': True, 'action': 'campaign_state_updated', 'item_id': project_lead.monday_item_id}
+        if update_errors:
+            result['warnings'] = update_errors[:5]
+        return result
     except Exception as exc:  # noqa: BLE001
         log.warning('Monday campaign state sync failed for ProjectLead %s: %s', project_lead.pk, exc)
         return {'ok': False, 'error': str(exc)}

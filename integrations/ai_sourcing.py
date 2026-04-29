@@ -5,6 +5,7 @@ Uses Claude's tool-use feature so the output is guaranteed to match a JSON schem
 """
 from __future__ import annotations
 
+import json
 import logging
 
 from ai_manager.services import AIService
@@ -855,6 +856,38 @@ def draft_email_sequence(
         user=user,
         max_tokens=3000,
     )
+    normalized = _normalize_email_steps(result)
+    if not _sequence_is_complete(normalized):
+        repair_prompt = (
+            f"{prompt}\n\n"
+            "The prior draft came back incomplete. Repair it so that all 3 steps have a non-empty subject and a non-empty body.\n"
+            f"Prior incomplete tool output:\n{json.dumps(result, indent=2)}\n\n"
+            "Return the corrected 3-step sequence via return_email_sequence. Do not leave any subject or body blank."
+        )
+        repaired = AIService.call_structured(
+            prompt=repair_prompt,
+            system_prompt=EMAIL_SEQUENCE_SYSTEM_PROMPT,
+            tool_name='return_email_sequence',
+            tool_description='Return a corrected 3-step outreach email sequence drafted from the study materials.',
+            tool_schema=EMAIL_SEQUENCE_TOOL_SCHEMA,
+            function_name='draft_email_sequence_repair',
+            user=user,
+            max_tokens=3200,
+        )
+        normalized = _normalize_email_steps(repaired)
+
+    if not _sequence_is_complete(normalized):
+        log.warning('AI returned incomplete email sequence for %s; using fallback draft', study_code)
+        normalized = _fallback_email_sequence(
+            study_code=study_code,
+            study_indication=profile.study_indication or '',
+            patient_population_description=profile.patient_population_description or '',
+        )
+    log.info('Drafted email sequence: %d steps for %s', len(normalized), study_code)
+    return normalized
+
+
+def _normalize_email_steps(result: dict | None) -> list[dict]:
     steps = result.get('steps') if isinstance(result, dict) else []
     normalized = []
     for i, s in enumerate(steps or []):
@@ -868,8 +901,66 @@ def draft_email_sequence(
             'rationale': (s.get('rationale') or '').strip(),
             'approved': False,
         })
-    log.info('Drafted email sequence: %d steps for %s', len(normalized), study_code)
     return normalized
+
+
+def _sequence_is_complete(steps: list[dict]) -> bool:
+    if len(steps) < 3:
+        return False
+    required_steps = {1, 2, 3}
+    seen_steps = {int(step.get('step_num') or 0) for step in steps}
+    if not required_steps.issubset(seen_steps):
+        return False
+    return all((step.get('subject') or '').strip() and (step.get('body') or '').strip() for step in steps[:3])
+
+
+def _fallback_email_sequence(*, study_code: str, study_indication: str, patient_population_description: str) -> list[dict]:
+    indication = study_indication.strip() or 'the study indication'
+    population = patient_population_description.strip() or (
+        'We are reaching out to identify providers and organizations who may work with patients that could be relevant for this study.'
+    )
+    return [
+        {
+            'step_num': 1,
+            'delay_days': 0,
+            'subject': f'Collaboration on {study_code}',
+            'body': (
+                "{{formal_salutation}},\n\n"
+                f"I am reaching out from CliniContact regarding {study_code}, a study focused on {indication}. "
+                f"{population} We are looking to connect with clinicians and organizations who may be open to learning more about the study and, if appropriate, referring potentially eligible participants.\n\n"
+                "If this is relevant to your practice or organization, I would be happy to send the study flyer or connect you with the study team for a brief discussion.\n\n"
+                "Best,\nThe CliniContact team"
+            ),
+            'rationale': 'Cold introduction focused on collaboration and referral interest.',
+            'approved': False,
+        },
+        {
+            'step_num': 2,
+            'delay_days': 4,
+            'subject': f'Following up on {study_code}',
+            'body': (
+                "{{formal_salutation}},\n\n"
+                f"I wanted to follow up on my note about {study_code}. If it would be helpful, I can send the study flyer or connect you with the study team so you can quickly assess whether this could be relevant for the patients you support.\n\n"
+                "Please let me know if you would like me to share those materials.\n\n"
+                "Best,\nThe CliniContact team"
+            ),
+            'rationale': 'Brief follow-up that offers materials without adding new claims.',
+            'approved': False,
+        },
+        {
+            'step_num': 3,
+            'delay_days': 8,
+            'subject': f'Last follow-up on {study_code}',
+            'body': (
+                "{{formal_salutation}},\n\n"
+                f"I am sending one last follow-up regarding {study_code}, which is focused on {indication}. If you think this may be relevant for your patients or community, I would be glad to send the flyer or connect you with the study team. "
+                "If there is someone else on your team who would be better for this conversation, I would also appreciate being pointed in the right direction.\n\n"
+                "Best,\nThe CliniContact team"
+            ),
+            'rationale': 'Soft close that still leaves a clear next step.',
+            'approved': False,
+        },
+    ]
 
 
 # ──────────────────────── helpers ───────────────────────────────────────────

@@ -142,6 +142,8 @@ def draft_sequence(campaign: Campaign, *, user=None) -> Campaign:
     )
     if not steps:
         raise RuntimeError('Claude returned no steps — try again or adjust the partner profile.')
+    if not all((step.get('subject') or '').strip() and (step.get('body') or '').strip() for step in steps[:3]):
+        raise RuntimeError('Bridge could not generate a complete sequence draft — please try redraft again.')
 
     campaign.sequence_config = steps
     campaign.status = Campaign.STATUS_AWAITING_APPROVAL

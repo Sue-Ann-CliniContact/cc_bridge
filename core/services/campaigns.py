@@ -168,7 +168,8 @@ def launch_campaign(
 
     Returns a summary dict: {ok, campaign_id, pushed, skipped, errors}.
     """
-    if campaign.status not in (Campaign.STATUS_DRAFT, Campaign.STATUS_AWAITING_APPROVAL, Campaign.STATUS_PAUSED):
+    is_retrying_created_campaign = bool(campaign.instantly_campaign_id) and campaign.status == Campaign.STATUS_ACTIVE
+    if campaign.status not in (Campaign.STATUS_DRAFT, Campaign.STATUS_AWAITING_APPROVAL, Campaign.STATUS_PAUSED) and not is_retrying_created_campaign:
         return {'ok': False, 'error': f'Campaign is {campaign.status} — cannot launch.'}
     if not campaign.sequence_config:
         return {'ok': False, 'error': 'Sequence is empty. Draft it first.'}
@@ -214,17 +215,19 @@ def launch_campaign(
             'error': f'No sendable leads (skipped {skipped_no_email} without email, {skipped_opt_out} opted out).',
         }
 
-    # 1) Create the Instantly campaign
-    try:
-        created = instantly_client.create_campaign(
-            name=campaign.name,
-            sequence_steps=clean_steps,
-            sending_account_emails=sending_account_emails,
-        )
-    except Exception as exc:  # noqa: BLE001
-        return {'ok': False, 'error': f'Instantly create_campaign failed: {exc}'}
+    # 1) Create the Instantly campaign, or reuse the created campaign during a retry.
+    instantly_campaign_id = str(campaign.instantly_campaign_id or '')
+    if not instantly_campaign_id:
+        try:
+            created = instantly_client.create_campaign(
+                name=campaign.name,
+                sequence_steps=clean_steps,
+                sending_account_emails=sending_account_emails,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return {'ok': False, 'error': f'Instantly create_campaign failed: {exc}'}
 
-    instantly_campaign_id = created['id']
+        instantly_campaign_id = created['id']
 
     # 2) Push leads
     try:
@@ -238,6 +241,14 @@ def launch_campaign(
         return {
             'ok': False,
             'error': f'Instantly campaign was created ({instantly_campaign_id}) but lead push failed: {exc}',
+        }
+    if push_result.get('errors') and not push_result.get('pushed'):
+        campaign.instantly_campaign_id = str(instantly_campaign_id)
+        campaign.status = Campaign.STATUS_AWAITING_APPROVAL
+        campaign.save(update_fields=['instantly_campaign_id', 'status', 'updated_at'])
+        return {
+            'ok': False,
+            'error': f'Instantly campaign was created ({instantly_campaign_id}) but no leads were pushed: {"; ".join(push_result["errors"])[:500]}',
         }
 
     # 3) Mark campaign active + leads queued
@@ -258,10 +269,15 @@ def launch_campaign(
         }
 
     try:
-        monday_sync.sync_project_leads(
+        monday_results = monday_sync.sync_project_leads(
             campaign.project_leads.select_related('project', 'lead').all(),
             user=user,
         )
+        monday_errors = [r.get('error') or r.get('skipped') for r in monday_results if not r.get('ok')]
+        if monday_errors:
+            push_errors = push_result.get('errors', [])
+            push_errors.append(f'Monday sync warnings after launch: {"; ".join(str(e) for e in monday_errors[:3])[:300]}')
+            push_result['errors'] = push_errors
     except Exception as exc:  # noqa: BLE001
         push_errors = push_result.get('errors', [])
         push_errors.append(f'Monday sync failed after launch: {exc}')

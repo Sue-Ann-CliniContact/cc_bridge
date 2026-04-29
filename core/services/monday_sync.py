@@ -489,12 +489,11 @@ def sync_project_lead(project_lead: ProjectLead, *, user=None) -> dict:
     if not sync_user:
         return {'ok': False, 'skipped': 'no Monday user token available'}
 
-    _attach_origin_item_if_same_board(project_lead)
-    columns = _ensure_board_schema(sync_user, board_id)
-    item_name = _item_name_for_lead(project_lead.lead)
-    values = _column_values(project_lead, columns)
-
     try:
+        _attach_origin_item_if_same_board(project_lead)
+        columns = _ensure_board_schema(sync_user, board_id)
+        item_name = _item_name_for_lead(project_lead.lead)
+        values = _column_values(project_lead, columns)
         if project_lead.monday_item_id:
             monday_client.change_multiple_column_values(sync_user, board_id, project_lead.monday_item_id, values)
             action = 'updated'

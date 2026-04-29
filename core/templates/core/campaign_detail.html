@@ -135,10 +135,16 @@
 </div>
 
 <!-- Launch -->
-{% if campaign.status != 'active' and campaign.status != 'completed' and sequence_steps %}
+{% if campaign.status != 'completed' and sequence_steps %}
   <div class="surface-card mt-8 p-6 max-w-4xl">
     <h2 class="text-sm font-bold uppercase tracking-wider text-cc-muted">Launch to Instantly</h2>
-    <p class="mt-1 text-xs text-cc-muted">Creates the campaign on Instantly with these sequence steps and pushes the {{ project_leads.count }} selected leads.</p>
+    <p class="mt-1 text-xs text-cc-muted">
+      {% if campaign.instantly_campaign_id %}
+        Pushes the {{ project_leads.count }} selected leads to the existing Instantly campaign.
+      {% else %}
+        Creates the campaign on Instantly with these sequence steps and pushes the {{ project_leads.count }} selected leads.
+      {% endif %}
+    </p>
 
     <form method="post" action="{% url 'campaign_launch' campaign.pk %}" class="mt-4">
       {% csrf_token %}
@@ -166,7 +172,7 @@
         <button type="submit"
                 class="cc-btn cc-btn-primary"
                 onclick="return confirm('Launch this campaign on Instantly? This will send emails on the configured schedule.');">
-          Launch →
+          {% if campaign.instantly_campaign_id %}Retry lead push →{% else %}Launch →{% endif %}
         </button>
       </div>
     </form>

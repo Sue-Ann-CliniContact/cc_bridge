@@ -244,9 +244,7 @@ def push_leads(
     for i in range(0, len(valid), BATCH_SIZE):
         batch = valid[i : i + BATCH_SIZE]
         payload = {
-            'api_key': key,
             'campaign_id': campaign_id,
-            'skip_if_in_workspace': True,
             'leads': [
                 {
                     'email': lead['email'],
@@ -260,13 +258,22 @@ def push_leads(
         }
         try:
             r = requests.post(
-                f'{INSTANTLY_V1}/lead/add',
+                f'{INSTANTLY_V2}/leads/add',
                 json=payload,
-                headers={'Content-Type': 'application/json'},
+                headers={'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'},
                 timeout=30,
             )
-            r.raise_for_status()
-            results['pushed'] += len(batch)
+            if r.status_code >= 400:
+                results['errors'].append(f'Batch {i // BATCH_SIZE + 1}: {r.status_code} {r.text[:500]}')
+                continue
+            data = r.json() or {}
+            uploaded = data.get('leads_uploaded')
+            results['pushed'] += int(uploaded) if uploaded is not None else len(batch)
+            skipped_count = int(data.get('skipped_count') or 0)
+            invalid_count = int(data.get('invalid_email_count') or 0)
+            duplicate_count = int(data.get('duplicated_leads') or data.get('duplicate_email_count') or 0)
+            incomplete_count = int(data.get('incomplete_count') or 0)
+            results['skipped'] += skipped_count + invalid_count + duplicate_count + incomplete_count
         except requests.RequestException as exc:
             results['errors'].append(f'Batch {i // BATCH_SIZE + 1}: {exc}')
 

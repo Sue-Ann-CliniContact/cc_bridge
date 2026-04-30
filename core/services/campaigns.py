@@ -58,6 +58,10 @@ def _greeting_name(lead: Lead) -> str:
 
 
 def _lead_personalization(lead: Lead, project_lead: ProjectLead, campaign: Campaign) -> dict:
+    formal_salutation = _formal_salutation(lead)
+    greeting_name = _greeting_name(lead)
+    organization_name = (lead.organization or '').strip()
+    landing_page_url = get_landing_page_url(campaign.project)
     return {
         'project_id': campaign.project_id,
         'campaign_id': campaign.pk,
@@ -69,8 +73,14 @@ def _lead_personalization(lead: Lead, project_lead: ProjectLead, campaign: Campa
         'role': (lead.role or '').strip(),
         'specialty': (lead.specialty or '').strip(),
         'recipient_type': _recipient_type(lead),
-        'formal_salutation': _formal_salutation(lead),
-        'greeting_name': _greeting_name(lead),
+        'formal_salutation': formal_salutation,
+        'greeting_name': greeting_name,
+        'organization_name': organization_name,
+        'landing_page_url': landing_page_url,
+        'formalSalutation': formal_salutation,
+        'greetingName': greeting_name,
+        'organizationName': organization_name,
+        'landingPageUrl': landing_page_url,
     }
 
 

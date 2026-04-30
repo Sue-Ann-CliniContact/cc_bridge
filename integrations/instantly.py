@@ -115,7 +115,7 @@ def _linkify_escaped_line(line: str) -> str:
 
 
 def _format_email_body(body: str) -> str:
-    cleaned = _strip_generic_signature(body or '')
+    cleaned = _normalize_merge_variables(_strip_generic_signature(body or ''))
     paragraphs = [
         paragraph.strip()
         for paragraph in re.split(r'\n\s*\n', cleaned)
@@ -133,6 +133,18 @@ def _format_email_body(body: str) -> str:
     if signature_lines:
         html_parts.append(f'<p>{"<br>".join(signature_lines)}</p>')
     return '\n'.join(html_parts)
+
+
+def _normalize_merge_variables(text: str) -> str:
+    replacements = {
+        '{{formal_salutation}}': '{{formalSalutation}}',
+        '{{greeting_name}}': '{{greetingName}}',
+        '{{organization_name}}': '{{organizationName}}',
+        '{{landing_page_url}}': '{{landingPageUrl}}',
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    return text
 
 
 def _split_dense_paragraph(text: str) -> list[str]:
@@ -358,7 +370,7 @@ def push_leads(
                     'first_name': lead.get('first_name', ''),
                     'last_name': lead.get('last_name', ''),
                     'company_name': lead.get('organisation', '') or lead.get('organization', ''),
-                    'custom_variables': lead.get('custom_variables', {}),
+                    'custom_variables': _instant_custom_variables(lead.get('custom_variables', {})),
                 }
                 for lead in batch
             ],
@@ -388,6 +400,22 @@ def push_leads(
             time.sleep(0.5)
 
     return results
+
+
+def _instant_custom_variables(custom_variables: dict) -> dict:
+    if not isinstance(custom_variables, dict):
+        return {}
+    values = dict(custom_variables)
+    aliases = {
+        'formal_salutation': 'formalSalutation',
+        'greeting_name': 'greetingName',
+        'organization_name': 'organizationName',
+        'landing_page_url': 'landingPageUrl',
+    }
+    for source, target in aliases.items():
+        if source in values and target not in values:
+            values[target] = values[source]
+    return values
 
 
 def get_campaign_analytics(

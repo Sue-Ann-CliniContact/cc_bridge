@@ -392,16 +392,18 @@ def _board_item_matches_lead(item: dict, lead: Lead) -> bool:
     return bool(item_name and (item_name == lead_name or (organization and item_name == organization)))
 
 
-def _attach_existing_board_item_by_match(project_lead: ProjectLead, user, board_id: str) -> bool:
+def _attach_existing_board_item_by_match(project_lead: ProjectLead, user, board_id: str, items: list[dict] | None = None) -> bool:
     if project_lead.monday_item_id:
         return True
-    try:
-        payload = monday_client.list_board_items(user, board_id, limit=500)
-    except Exception as exc:  # noqa: BLE001
-        log.warning('Monday existing-item lookup failed for ProjectLead %s: %s', project_lead.pk, exc)
-        return False
+    if items is None:
+        try:
+            payload = monday_client.list_board_items(user, board_id, limit=500)
+            items = payload.get('items') or []
+        except Exception as exc:  # noqa: BLE001
+            log.warning('Monday existing-item lookup failed for ProjectLead %s: %s', project_lead.pk, exc)
+            return False
 
-    for item in payload.get('items') or []:
+    for item in items:
         item_id = str(item.get('id') or '')
         if item_id and _board_item_matches_lead(item, project_lead.lead):
             project_lead.monday_item_id = item_id
@@ -509,12 +511,7 @@ def _campaign_column_values(project_lead: ProjectLead, columns: dict) -> dict:
 def _safe_change_column_values(user, board_id: str, item_id: str, values: dict) -> list[str]:
     if not values:
         return []
-    try:
-        monday_client.change_multiple_column_values(user, board_id, item_id, values)
-        return []
-    except Exception as bulk_exc:  # noqa: BLE001
-        errors = [f'bulk update failed: {bulk_exc}']
-
+    errors = []
     for column_id, value in values.items():
         try:
             monday_client.change_column_value(user, board_id, item_id, column_id, value)
@@ -613,7 +610,14 @@ def _create_monday_item(user, board_id: str, *, item_name: str, group_id: str | 
         return monday_client.create_item(user, board_id, item_name=item_name, column_values={}, group_id=None)
 
 
-def sync_project_lead(project_lead: ProjectLead, *, user=None, columns: dict | None = None, groups: dict[str, str] | None = None) -> dict:
+def sync_project_lead(
+    project_lead: ProjectLead,
+    *,
+    user=None,
+    columns: dict | None = None,
+    groups: dict[str, str] | None = None,
+    existing_items: list[dict] | None = None,
+) -> dict:
     project = project_lead.project
     board_id = str(project.monday_board_id or '')
     if not board_id:
@@ -625,7 +629,7 @@ def sync_project_lead(project_lead: ProjectLead, *, user=None, columns: dict | N
 
     try:
         _attach_origin_item_if_same_board(project_lead)
-        _attach_existing_board_item_by_match(project_lead, sync_user, board_id)
+        _attach_existing_board_item_by_match(project_lead, sync_user, board_id, items=existing_items)
         columns = columns or _ensure_board_schema(sync_user, board_id, create_missing=False)
         item_name = _item_name_for_lead(project_lead.lead)
         values = _column_values(project_lead, columns)
@@ -719,8 +723,18 @@ def sync_event_update(project_lead: ProjectLead, event: OutreachEvent, *, user=N
         return {'ok': False, 'error': str(exc)}
 
 
-def sync_project_leads(project_leads, *, user=None, columns: dict | None = None, groups: dict[str, str] | None = None) -> list[dict]:
-    return [sync_project_lead(pl, user=user, columns=columns, groups=groups) for pl in project_leads]
+def sync_project_leads(
+    project_leads,
+    *,
+    user=None,
+    columns: dict | None = None,
+    groups: dict[str, str] | None = None,
+    existing_items: list[dict] | None = None,
+) -> list[dict]:
+    return [
+        sync_project_lead(pl, user=user, columns=columns, groups=groups, existing_items=existing_items)
+        for pl in project_leads
+    ]
 
 
 def sync_project(project: Project, *, user=None) -> dict:
@@ -728,11 +742,18 @@ def sync_project(project: Project, *, user=None) -> dict:
     sync_user = _sync_user(project, explicit_user=user)
     columns = None
     groups = None
+    existing_items = None
     if sync_user and project.monday_board_id:
-        board = _board_meta(sync_user, str(project.monday_board_id))
+        board_id = str(project.monday_board_id)
+        board = _board_meta(sync_user, board_id)
         columns = _mapping_with_types(board.get('columns') or [])
         groups = _groups_from_board(board)
-    results = sync_project_leads(rows, user=user, columns=columns, groups=groups)
+        try:
+            existing_items = monday_client.list_board_items(sync_user, board_id, limit=500).get('items') or []
+        except Exception as exc:  # noqa: BLE001
+            log.warning('Monday existing item cache failed for project %s: %s', project.pk, exc)
+            existing_items = []
+    results = sync_project_leads(rows, user=user, columns=columns, groups=groups, existing_items=existing_items)
     ok = sum(1 for r in results if r.get('ok'))
     failed = len(results) - ok
     created = sum(1 for r in results if r.get('action') == 'created')

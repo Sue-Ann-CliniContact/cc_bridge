@@ -411,6 +411,29 @@ def _attach_existing_board_item_by_match(project_lead: ProjectLead, user, board_
     return False
 
 
+def _column_type(columns: dict, key: str) -> str:
+    column_id = columns.get(key)
+    return (columns.get('__types') or {}).get(column_id, '') if column_id else ''
+
+
+def _status_value(columns: dict, key: str, label: str):
+    return {'label': label} if _column_type(columns, key) == 'status' else label
+
+
+def _email_value(columns: dict, key: str, email: str):
+    return {'email': email, 'text': email} if _column_type(columns, key) == 'email' else email
+
+
+def _date_value(columns: dict, key: str, value: str):
+    return {'date': value} if _column_type(columns, key) == 'date' else value
+
+
+def _link_value(columns: dict, key: str, value: dict):
+    if _column_type(columns, key) == 'link':
+        return value
+    return value.get('url') or value.get('text') or ''
+
+
 def _column_values(project_lead: ProjectLead, columns: dict) -> dict:
     lead = project_lead.lead
     values: dict = {}
@@ -421,28 +444,28 @@ def _column_values(project_lead: ProjectLead, columns: dict) -> dict:
     if columns.get('role_specialty'):
         values[columns['role_specialty']] = _role_specialty(lead)
     if columns.get('classification'):
-        values[columns['classification']] = {'label': _classification_label(lead)}
+        values[columns['classification']] = _status_value(columns, 'classification', _classification_label(lead))
     if columns.get('email') and lead.email:
-        values[columns['email']] = {'email': lead.email, 'text': lead.email}
+        values[columns['email']] = _email_value(columns, 'email', lead.email)
     if columns.get('organization_email') and lead.organization_email:
-        values[columns['organization_email']] = {'email': lead.organization_email, 'text': lead.organization_email}
+        values[columns['organization_email']] = _email_value(columns, 'organization_email', lead.organization_email)
     if columns.get('source_directory'):
-        values[columns['source_directory']] = {'label': lead.get_source_display()}
+        values[columns['source_directory']] = _status_value(columns, 'source_directory', lead.get_source_display())
     if columns.get('campaign_status'):
-        values[columns['campaign_status']] = {'label': _status_label(project_lead)}
+        values[columns['campaign_status']] = _status_value(columns, 'campaign_status', _status_label(project_lead))
     latest_event = _latest_event(project_lead)
     if columns.get('last_event') and latest_event:
-        values[columns['last_event']] = {'date': latest_event.timestamp.date().isoformat()}
+        values[columns['last_event']] = _date_value(columns, 'last_event', latest_event.timestamp.date().isoformat())
     if columns.get('interest_level'):
         label = _interest_label(project_lead)
         if label:
-            values[columns['interest_level']] = {'label': label}
+            values[columns['interest_level']] = _status_value(columns, 'interest_level', label)
     if columns.get('sequence_step'):
         values[columns['sequence_step']] = _sequence_step(project_lead)
     if columns.get('human_action_needed'):
-        values[columns['human_action_needed']] = {'label': _human_action(project_lead)}
+        values[columns['human_action_needed']] = _status_value(columns, 'human_action_needed', _human_action(project_lead))
     if columns.get('reply_intent'):
-        values[columns['reply_intent']] = {'label': _reply_intent(project_lead)}
+        values[columns['reply_intent']] = _status_value(columns, 'reply_intent', _reply_intent(project_lead))
     if columns.get('next_action'):
         next_action = _next_action(project_lead)
         if next_action:
@@ -454,7 +477,7 @@ def _column_values(project_lead: ProjectLead, columns: dict) -> dict:
     if columns.get('last_event_type') and latest_event:
         values[columns['last_event_type']] = _last_event_type(project_lead)
     if columns.get('referral_link'):
-        values[columns['referral_link']] = _referral_link_value(project_lead)
+        values[columns['referral_link']] = _link_value(columns, 'referral_link', _referral_link_value(project_lead))
     if columns.get('referred_count'):
         values[columns['referred_count']] = project_lead.referred_count
     if columns.get('notes') and lead.do_not_contact_reason:
@@ -469,7 +492,7 @@ def _column_values(project_lead: ProjectLead, columns: dict) -> dict:
 def _campaign_column_values(project_lead: ProjectLead, columns: dict) -> dict:
     values: dict = {}
     if columns.get('campaign_status'):
-        values[columns['campaign_status']] = {'label': _status_label(project_lead)}
+        values[columns['campaign_status']] = _status_value(columns, 'campaign_status', _status_label(project_lead))
     if columns.get('sequence_step'):
         values[columns['sequence_step']] = _sequence_step(project_lead)
     if columns.get('campaign_name'):
@@ -500,9 +523,19 @@ def _safe_change_column_values(user, board_id: str, item_id: str, values: dict) 
     return errors
 
 
+def _mapping_with_types(columns: list[dict]) -> dict:
+    mapping = monday_client.bridge_column_map(columns)
+    mapping['__types'] = {
+        col.get('id'): col.get('type')
+        for col in columns
+        if col.get('id') and col.get('type')
+    }
+    return mapping
+
+
 def _board_columns(user, board_id: str) -> dict:
     board = monday_client.get_board(user, board_id)
-    return monday_client.bridge_column_map(board.get('columns') or [])
+    return _mapping_with_types(board.get('columns') or [])
 
 
 def _board_meta(user, board_id: str) -> dict:
@@ -543,7 +576,7 @@ def _ensure_board_schema(user, board_id: str) -> dict:
         except Exception as exc:  # noqa: BLE001
             log.warning('Monday column creation failed for board %s column %s: %s', board_id, title, exc)
 
-    return monday_client.bridge_column_map((_board_meta(user, board_id).get('columns') or []))
+    return _mapping_with_types(_board_meta(user, board_id).get('columns') or [])
 
 
 def _sync_group(project_lead: ProjectLead, user) -> None:

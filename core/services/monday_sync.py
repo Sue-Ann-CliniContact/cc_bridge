@@ -372,6 +372,45 @@ def _attach_origin_item_if_same_board(project_lead: ProjectLead) -> bool:
     return False
 
 
+def _board_item_matches_lead(item: dict, lead: Lead) -> bool:
+    target_emails = {
+        email.lower()
+        for email in (lead.email, lead.organization_email)
+        if email and '@' in email
+    }
+    searchable_parts = [str(item.get('name') or '')]
+    for column_value in item.get('column_values') or []:
+        searchable_parts.append(str(column_value.get('text') or ''))
+        searchable_parts.append(str(column_value.get('value') or ''))
+    searchable = ' '.join(searchable_parts).lower()
+    if target_emails and any(email in searchable for email in target_emails):
+        return True
+
+    item_name = (item.get('name') or '').strip().lower()
+    lead_name = _item_name_for_lead(lead).strip().lower()
+    organization = (lead.organization or '').strip().lower()
+    return bool(item_name and (item_name == lead_name or (organization and item_name == organization)))
+
+
+def _attach_existing_board_item_by_match(project_lead: ProjectLead, user, board_id: str) -> bool:
+    if project_lead.monday_item_id:
+        return True
+    try:
+        payload = monday_client.list_board_items(user, board_id, limit=500)
+    except Exception as exc:  # noqa: BLE001
+        log.warning('Monday existing-item lookup failed for ProjectLead %s: %s', project_lead.pk, exc)
+        return False
+
+    for item in payload.get('items') or []:
+        item_id = str(item.get('id') or '')
+        if item_id and _board_item_matches_lead(item, project_lead.lead):
+            project_lead.monday_item_id = item_id
+            project_lead.save(update_fields=['monday_item_id', 'updated_at'])
+            log.info('Attached ProjectLead %s to existing Monday item %s', project_lead.pk, item_id)
+            return True
+    return False
+
+
 def _column_values(project_lead: ProjectLead, columns: dict) -> dict:
     lead = project_lead.lead
     values: dict = {}
@@ -544,6 +583,7 @@ def sync_project_lead(project_lead: ProjectLead, *, user=None) -> dict:
 
     try:
         _attach_origin_item_if_same_board(project_lead)
+        _attach_existing_board_item_by_match(project_lead, sync_user, board_id)
         columns = _ensure_board_schema(sync_user, board_id)
         item_name = _item_name_for_lead(project_lead.lead)
         values = _column_values(project_lead, columns)
@@ -648,7 +688,16 @@ def sync_project(project: Project, *, user=None) -> dict:
     failed = len(results) - ok
     created = sum(1 for r in results if r.get('action') == 'created')
     updated = sum(1 for r in results if r.get('action') == 'updated')
-    return {'ok': True, 'total': len(results), 'created': created, 'updated': updated, 'failed': failed, 'results': results}
+    warning_count = sum(1 for r in results if r.get('warnings'))
+    return {
+        'ok': True,
+        'total': len(results),
+        'created': created,
+        'updated': updated,
+        'failed': failed,
+        'warnings': warning_count,
+        'results': results,
+    }
 
 
 def sync_lead_everywhere(lead: Lead, *, user=None) -> list[dict]:

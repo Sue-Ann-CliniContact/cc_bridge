@@ -152,8 +152,16 @@ def monday_sync_project_view(request, project_id):
     if result.get('ok'):
         messages.success(
             request,
-            f"Monday sync complete: {result['created']} created, {result['updated']} updated, {result['failed']} failed."
+            f"Monday sync complete: {result['created']} created, {result['updated']} updated, "
+            f"{result.get('warnings', 0)} with warnings, {result['failed']} failed."
         )
+        failures = [
+            r.get('error') or r.get('skipped')
+            for r in result.get('results', [])
+            if not r.get('ok') and (r.get('error') or r.get('skipped'))
+        ]
+        if failures:
+            messages.warning(request, 'First Monday sync issue: ' + str(failures[0])[:500])
     else:
         messages.error(request, f"Monday sync failed: {result.get('error', 'unknown error')}")
     return _project_redirect_from_request(request, project.pk, default_tab='operator')

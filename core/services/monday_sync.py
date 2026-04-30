@@ -542,9 +542,15 @@ def _board_meta(user, board_id: str) -> dict:
     return monday_client.get_board(user, board_id)
 
 
-def _ensure_groups(user, board_id: str) -> dict[str, str]:
+def _groups_from_board(board: dict) -> dict[str, str]:
+    return {g.get('title'): g.get('id') for g in (board.get('groups') or []) if g.get('id') and g.get('title')}
+
+
+def _ensure_groups(user, board_id: str, *, create_missing: bool = True) -> dict[str, str]:
     board = _board_meta(user, board_id)
-    groups = {g.get('title'): g.get('id') for g in (board.get('groups') or []) if g.get('id') and g.get('title')}
+    groups = _groups_from_board(board)
+    if not create_missing:
+        return groups
     for group_name, color in WORKFLOW_GROUPS:
         if group_name in groups:
             continue
@@ -557,10 +563,13 @@ def _ensure_groups(user, board_id: str) -> dict[str, str]:
     return groups
 
 
-def _ensure_board_schema(user, board_id: str) -> dict:
+def _ensure_board_schema(user, board_id: str, *, create_missing: bool = True) -> dict:
     board = _board_meta(user, board_id)
     columns = board.get('columns') or []
     mapping = monday_client.bridge_column_map(columns)
+
+    if not create_missing:
+        return _mapping_with_types(columns)
 
     for key, title, column_type in BRIDGE_BOARD_COLUMNS:
         if mapping.get(key):
@@ -579,13 +588,13 @@ def _ensure_board_schema(user, board_id: str) -> dict:
     return _mapping_with_types(_board_meta(user, board_id).get('columns') or [])
 
 
-def _sync_group(project_lead: ProjectLead, user) -> None:
+def _sync_group(project_lead: ProjectLead, user, *, groups: dict[str, str] | None = None) -> None:
     if not project_lead.monday_item_id:
         return
     board_id = str(project_lead.project.monday_board_id or '')
     if not board_id:
         return
-    groups = _ensure_groups(user, board_id)
+    groups = groups if groups is not None else _ensure_groups(user, board_id, create_missing=False)
     target_group = groups.get(_target_group_name(project_lead))
     if target_group:
         try:
@@ -604,7 +613,7 @@ def _create_monday_item(user, board_id: str, *, item_name: str, group_id: str | 
         return monday_client.create_item(user, board_id, item_name=item_name, column_values={}, group_id=None)
 
 
-def sync_project_lead(project_lead: ProjectLead, *, user=None) -> dict:
+def sync_project_lead(project_lead: ProjectLead, *, user=None, columns: dict | None = None, groups: dict[str, str] | None = None) -> dict:
     project = project_lead.project
     board_id = str(project.monday_board_id or '')
     if not board_id:
@@ -617,7 +626,7 @@ def sync_project_lead(project_lead: ProjectLead, *, user=None) -> dict:
     try:
         _attach_origin_item_if_same_board(project_lead)
         _attach_existing_board_item_by_match(project_lead, sync_user, board_id)
-        columns = _ensure_board_schema(sync_user, board_id)
+        columns = columns or _ensure_board_schema(sync_user, board_id, create_missing=False)
         item_name = _item_name_for_lead(project_lead.lead)
         values = _column_values(project_lead, columns)
         update_errors = []
@@ -625,7 +634,7 @@ def sync_project_lead(project_lead: ProjectLead, *, user=None) -> dict:
             update_errors = _safe_change_column_values(sync_user, board_id, project_lead.monday_item_id, values)
             action = 'updated'
         else:
-            groups = _ensure_groups(sync_user, board_id)
+            groups = groups if groups is not None else _ensure_groups(sync_user, board_id, create_missing=False)
             target_group = groups.get(_target_group_name(project_lead))
             created = _create_monday_item(sync_user, board_id, item_name=item_name, group_id=target_group)
             item_id = str(created.get('id') or '')
@@ -634,7 +643,7 @@ def sync_project_lead(project_lead: ProjectLead, *, user=None) -> dict:
                 project_lead.save(update_fields=['monday_item_id', 'updated_at'])
                 update_errors = _safe_change_column_values(sync_user, board_id, item_id, values)
             action = 'created'
-        _sync_group(project_lead, sync_user)
+        _sync_group(project_lead, sync_user, groups=groups)
         result = {'ok': True, 'action': action, 'item_id': project_lead.monday_item_id}
         if update_errors:
             result['warnings'] = update_errors[:5]
@@ -710,13 +719,20 @@ def sync_event_update(project_lead: ProjectLead, event: OutreachEvent, *, user=N
         return {'ok': False, 'error': str(exc)}
 
 
-def sync_project_leads(project_leads, *, user=None) -> list[dict]:
-    return [sync_project_lead(pl, user=user) for pl in project_leads]
+def sync_project_leads(project_leads, *, user=None, columns: dict | None = None, groups: dict[str, str] | None = None) -> list[dict]:
+    return [sync_project_lead(pl, user=user, columns=columns, groups=groups) for pl in project_leads]
 
 
 def sync_project(project: Project, *, user=None) -> dict:
     rows = list(project.project_leads.select_related('project', 'lead').all())
-    results = sync_project_leads(rows, user=user)
+    sync_user = _sync_user(project, explicit_user=user)
+    columns = None
+    groups = None
+    if sync_user and project.monday_board_id:
+        board = _board_meta(sync_user, str(project.monday_board_id))
+        columns = _mapping_with_types(board.get('columns') or [])
+        groups = _groups_from_board(board)
+    results = sync_project_leads(rows, user=user, columns=columns, groups=groups)
     ok = sum(1 for r in results if r.get('ok'))
     failed = len(results) - ok
     created = sum(1 for r in results if r.get('action') == 'created')
@@ -814,7 +830,15 @@ def provision_project_board(project: Project, *, user=None) -> dict:
     if not sync_user:
         return {'ok': False, 'error': 'No Monday user token available'}
     if project.monday_board_id:
-        return {'ok': True, 'board_id': project.monday_board_id, 'created': False}
+        columns = _ensure_board_schema(sync_user, str(project.monday_board_id), create_missing=True)
+        groups = _ensure_groups(sync_user, str(project.monday_board_id), create_missing=True)
+        return {
+            'ok': True,
+            'board_id': project.monday_board_id,
+            'created': False,
+            'mapped_columns': {k: v for k, v in columns.items() if k != '__types' and v},
+            'groups': groups,
+        }
 
     board_name = f'{project.study_code} Bridge Outreach'
     created = monday_client.create_board(sync_user, name=board_name)

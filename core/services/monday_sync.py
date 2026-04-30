@@ -476,9 +476,12 @@ def _ensure_groups(user, board_id: str) -> dict[str, str]:
     for group_name, color in WORKFLOW_GROUPS:
         if group_name in groups:
             continue
-        created = monday_client.create_group(user, board_id, group_name=group_name, group_color=color)
-        if created.get('id'):
-            groups[group_name] = created['id']
+        try:
+            created = monday_client.create_group(user, board_id, group_name=group_name, group_color=color)
+            if created.get('id'):
+                groups[group_name] = created['id']
+        except Exception as exc:  # noqa: BLE001
+            log.warning('Monday group creation failed for board %s group %s: %s', board_id, group_name, exc)
     return groups
 
 
@@ -490,13 +493,16 @@ def _ensure_board_schema(user, board_id: str) -> dict:
     for key, title, column_type in BRIDGE_BOARD_COLUMNS:
         if mapping.get(key):
             continue
-        monday_client.create_column(
-            user,
-            board_id,
-            title=title,
-            column_type=column_type,
-            defaults=_column_defaults(title),
-        )
+        try:
+            monday_client.create_column(
+                user,
+                board_id,
+                title=title,
+                column_type=column_type,
+                defaults=_column_defaults(title),
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning('Monday column creation failed for board %s column %s: %s', board_id, title, exc)
 
     return monday_client.bridge_column_map((_board_meta(user, board_id).get('columns') or []))
 
@@ -510,7 +516,20 @@ def _sync_group(project_lead: ProjectLead, user) -> None:
     groups = _ensure_groups(user, board_id)
     target_group = groups.get(_target_group_name(project_lead))
     if target_group:
-        monday_client.move_item_to_group(user, project_lead.monday_item_id, target_group)
+        try:
+            monday_client.move_item_to_group(user, project_lead.monday_item_id, target_group)
+        except Exception as exc:  # noqa: BLE001
+            log.warning('Monday item move failed for ProjectLead %s: %s', project_lead.pk, exc)
+
+
+def _create_monday_item(user, board_id: str, *, item_name: str, group_id: str | None = None) -> dict:
+    try:
+        return monday_client.create_item(user, board_id, item_name=item_name, column_values={}, group_id=group_id)
+    except Exception as grouped_exc:  # noqa: BLE001
+        if not group_id:
+            raise
+        log.warning('Monday item creation with group failed for board %s item %s: %s', board_id, item_name, grouped_exc)
+        return monday_client.create_item(user, board_id, item_name=item_name, column_values={}, group_id=None)
 
 
 def sync_project_lead(project_lead: ProjectLead, *, user=None) -> dict:
@@ -535,7 +554,7 @@ def sync_project_lead(project_lead: ProjectLead, *, user=None) -> dict:
         else:
             groups = _ensure_groups(sync_user, board_id)
             target_group = groups.get(_target_group_name(project_lead))
-            created = monday_client.create_item(sync_user, board_id, item_name=item_name, column_values={}, group_id=target_group)
+            created = _create_monday_item(sync_user, board_id, item_name=item_name, group_id=target_group)
             item_id = str(created.get('id') or '')
             if item_id:
                 project_lead.monday_item_id = item_id
